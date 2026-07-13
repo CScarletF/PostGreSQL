@@ -1,0 +1,698 @@
+
+PLAY [vitabaks.autobase.deploy_pgcluster | Deploy PostgreSQL Cluster] **********
+
+TASK [Gathering Facts] *********************************************************
+[0;32mok: [localhost][0m
+[1;35m[WARNING]: Could not match supplied host pattern, ignoring: consul_instances[0m
+[1;35m[WARNING]: Could not match supplied host pattern, ignoring: balancers[0m
+
+PLAY [vitabaks.autobase.deploy_pgcluster | Perform pre-checks and preparation] ***
+
+TASK [Gathering Facts] *********************************************************
+[0;32mok: [192.168.20.177][0m
+[0;32mok: [192.168.20.180][0m
+
+TASK [Gather package facts] ****************************************************
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [Define bind_address] *****************************************************
+[0;36mincluded: vitabaks.autobase.bind_address for 192.168.20.177, 192.168.20.180[0m
+
+TASK [vitabaks.autobase.bind_address : Get docker0 interface IP] ***************
+[0;32mok: [192.168.20.177][0m
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.bind_address : Expose bind_address as facts] ***********
+[0;32mok: [192.168.20.177][0m
+[0;32mok: [192.168.20.180][0m
+
+TASK [System info] *************************************************************
+[0;32mok: [192.168.20.177] => {[0m
+[0;32m    "msg": {[0m
+[0;32m        "architecture": "x86_64",[0m
+[0;32m        "cpu": {[0m
+[0;32m            "cores": 2,[0m
+[0;32m            "count": 2,[0m
+[0;32m            "model": "QEMU Virtual CPU version 2.5+"[0m
+[0;32m        },[0m
+[0;32m        "disk_space_total": "45.34 GB",[0m
+[0;32m        "ip_address": "10.244.1.0",[0m
+[0;32m        "kernel": "5.15.0-181-generic",[0m
+[0;32m        "memory": "11.68 GB",[0m
+[0;32m        "os": "Ubuntu 22.04",[0m
+[0;32m        "product_name": "Standard PC (i440FX + PIIX, 1996)",[0m
+[0;32m        "server_name": "jenkins",[0m
+[0;32m        "virtualization_type": "kvm"[0m
+[0;32m    }[0m
+[0;32m}[0m
+[0;32mok: [192.168.20.180] => {[0m
+[0;32m    "msg": {[0m
+[0;32m        "architecture": "x86_64",[0m
+[0;32m        "cpu": {[0m
+[0;32m            "cores": 2,[0m
+[0;32m            "count": 2,[0m
+[0;32m            "model": "QEMU Virtual CPU version 2.5+"[0m
+[0;32m        },[0m
+[0;32m        "disk_space_total": "134.35 GB",[0m
+[0;32m        "ip_address": "192.168.20.180",[0m
+[0;32m        "kernel": "5.15.0-177-generic",[0m
+[0;32m        "memory": "7.75 GB",[0m
+[0;32m        "os": "Ubuntu 22.04",[0m
+[0;32m        "product_name": "Standard PC (i440FX + PIIX, 1996)",[0m
+[0;32m        "server_name": "srv-deploy-eng",[0m
+[0;32m        "virtualization_type": "kvm"[0m
+[0;32m    }[0m
+[0;32m}[0m
+
+TASK [Update apt cache] ********************************************************
+[0;32mok: [192.168.20.177][0m
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.pre_checks : Ensure RemoveIPC is disabled (RemoveIPC=no in logind.conf)] ***
+[0;32mok: [192.168.20.177][0m
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.pre_checks : Disable unattended-upgrades to prevent automatic service restarts] ***
+[0;32mok: [192.168.20.180] => (item=apt-daily-upgrade.timer)[0m
+[0;32mok: [192.168.20.177] => (item=apt-daily-upgrade.timer)[0m
+[0;32mok: [192.168.20.180] => (item=apt-daily.timer)[0m
+[0;32mok: [192.168.20.177] => (item=apt-daily.timer)[0m
+[0;32mok: [192.168.20.180] => (item=apt-daily-upgrade.service)[0m
+[0;32mok: [192.168.20.177] => (item=apt-daily-upgrade.service)[0m
+[0;32mok: [192.168.20.180] => (item=apt-daily.service)[0m
+[0;32mok: [192.168.20.177] => (item=apt-daily.service)[0m
+[0;32mok: [192.168.20.180] => (item=unattended-upgrades.service)[0m
+[0;32mok: [192.168.20.177] => (item=unattended-upgrades.service)[0m
+
+TASK [vitabaks.autobase.pre_checks : Set max_connections from vars or use default] ***
+[0;32mok: [192.168.20.180] => (item={'option': 'max_connections', 'value': '1000'})[0m
+
+TASK [vitabaks.autobase.pre_checks : PgBouncer | Calculate pool_size] **********
+[0;32mok: [192.168.20.180] => (item={'name': 'postgres', 'dbname': 'postgres', 'pool_parameters': ''})[0m
+
+TASK [vitabaks.autobase.pre_checks : PgBouncer | Calculate total pool_size] ****
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.pre_checks : PgBouncer | Show total pool_size] *********
+[0;32mok: [192.168.20.180] => {[0m
+[0;32m    "pgbouncer_total_pool_size": 100[0m
+[0;32m}[0m
+
+TASK [vitabaks.autobase.pre_checks : PostgreSQL | check that data directory "/var/lib/postgresql/18/main" is not initialized] ***
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.pre_checks : HugePages | Get shared_buffers value from postgresql parameters] ***
+[0;32mok: [192.168.20.177][0m
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.pre_checks : HugePages | Set variable: shared_buffers_gb] ***
+[0;32mok: [192.168.20.177][0m
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.pre_checks : HugePages | No configuration is required] ***
+[0;32mok: [192.168.20.180] => {[0m
+[0;32m    "msg": "Current shared_buffers size: 1984MB (less than 8GB). No HugePages configuration is required."[0m
+[0;32m}[0m
+
+TASK [vitabaks.autobase.pre_checks : Create a list of extensions] **************
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.pre_checks : Generate the missing passwords] ***********
+[0;32mok: [192.168.20.180] => (item=(censored due to no_log))[0m
+[0;32mok: [192.168.20.180] => (item=(censored due to no_log))[0m
+[0;32mok: [192.168.20.180] => (item=(censored due to no_log))[0m
+
+TASK [vitabaks.autobase.pre_checks : Set password variables for all hosts] *****
+[0;32mok: [192.168.20.177][0m
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.hostname : Change hostname] ****************************
+[0;32mok: [192.168.20.177][0m
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.hostname : Change hostname in /etc/hosts] **************
+[0;32mok: [192.168.20.180] => (item=(censored due to no_log))[0m
+[0;32mok: [192.168.20.177] => (item=(censored due to no_log))[0m
+
+PLAY [vitabaks.autobase.etcd_cluster | Deploy etcd Cluster] ********************
+
+TASK [Gathering Facts] *********************************************************
+[0;32mok: [192.168.20.177][0m
+
+TASK [Update apt cache] ********************************************************
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.hostname : Change hostname] ****************************
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.hostname : Change hostname in /etc/hosts] **************
+[0;32mok: [192.168.20.177] => (item=(censored due to no_log))[0m
+
+TASK [vitabaks.autobase.ntp : Stop and disable systemd-timesyncd service] ******
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.ntp : Install chrony package] **************************
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.ntp : Copy the chrony.conf file] ***********************
+[0;33mchanged: [192.168.20.177][0m
+
+RUNNING HANDLER [vitabaks.autobase.ntp : Restart chrony service] ***************
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.etcd : Expose etcd_bind_address as facts] **************
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.etcd : Make sure the unzip/tar packages are present] ***
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.etcd : Download "etcd" package] ************************
+[0;33mchanged: [192.168.20.177] => (item=https://github.com/etcd-io/etcd/releases/download/v3.5.27/etcd-v3.5.27-linux-amd64.tar.gz)[0m
+
+TASK [vitabaks.autobase.etcd : Extract "etcd" into /tmp] ***********************
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.etcd : Copy "etcd" and "etcdctl" binary files to /usr/local/bin] ***
+[0;33mchanged: [192.168.20.177] => (item=etcd)[0m
+[0;33mchanged: [192.168.20.177] => (item=etcdctl)[0m
+
+TASK [vitabaks.autobase.etcd : Add etcd user] **********************************
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.etcd : Create etcd conf directory] *********************
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [Generate etcd TLS certificate] *******************************************
+[0;36mincluded: vitabaks.autobase.tls_certificate for 192.168.20.177[0m
+
+TASK [vitabaks.autobase.tls_certificate : Ensure TLS directory exist] **********
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Check if TLS CA cert already exists] ***
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Check if TLS server cert already exists] ***
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Check if TLS server key already exists] ***
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Generate subjectAltName entries for all hosts] ***
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Display Certificate subjectAltName future value] ***
+[0;32mok: [192.168.20.177] => {[0m
+[0;32m    "msg": "SubjectAltName = DNS:jenkins,DNS:localhost,IP:10.244.1.0,IP:127.0.0.1"[0m
+[0;32m}[0m
+
+TASK [vitabaks.autobase.tls_certificate : Generate CA private key] *************
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Create CSR for CA certificate] *******
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Create self-signed CA certificate from CSR] ***
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Create server private key] ***********
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Create server CSR] *******************
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Sign server certificate with the CA] ***
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Write server certificate] ************
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [Copy etcd TLS certificate, key and CA to all nodes] **********************
+[0;36mincluded: vitabaks.autobase.tls_certificate for 192.168.20.177[0m
+
+TASK [vitabaks.autobase.tls_certificate : Fetch TLS certificate, key and CA from master node] ***
+[0;32mok: [192.168.20.177] => (item=server.key)[0m
+[0;32mok: [192.168.20.177] => (item=server.crt)[0m
+[0;32mok: [192.168.20.177] => (item=ca.crt)[0m
+
+TASK [vitabaks.autobase.tls_certificate : Set variable: tls_files] *************
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Create directory /etc/etcd/tls] ******
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Copy TLS certificate, key and CA to all nodes] ***
+[0;33mchanged: [192.168.20.177] => (item=/etc/etcd/tls/server.crt)[0m
+[0;33mchanged: [192.168.20.177] => (item=/etc/etcd/tls/ca.crt)[0m
+[0;33mchanged: [192.168.20.177] => (item=/etc/etcd/tls/server.key)[0m
+
+TASK [vitabaks.autobase.etcd : Create etcd data directory] *********************
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.etcd : Generate etcd conf file] ************************
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.etcd : Copy systemd service file] **********************
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.etcd : Start etcd service and check cluster health] ****
+[0;36mincluded: /root/.ansible/collections/ansible_collections/vitabaks/autobase/roles/etcd/tasks/start.yml for 192.168.20.177[0m
+
+TASK [vitabaks.autobase.etcd : Enable and start etcd service] ******************
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.etcd : Wait for port 2379 to become open on the host] ***
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.etcd : Wait until the etcd is healthy] *****************
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.etcd : cluster health] *********************************
+[0;32mok: [192.168.20.177] => {[0m
+[0;32m    "msg": "https://10.244.1.0:2379 is healthy: successfully committed proposal: took = 58.144082ms\n"[0m
+[0;32m}[0m
+
+PLAY [vitabaks.autobase.consul | Configure Consul instances] *******************
+[0;36mskipping: no hosts matched[0m
+
+PLAY [vitabaks.autobase.deploy_pgcluster | Postgres Cluster Configuration] *****
+
+TASK [Gathering Facts] *********************************************************
+[0;32mok: [192.168.20.177][0m
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.add_repository : Add repository] ***********************
+[0;33mchanged: [192.168.20.177] => (item={'repo': 'deb https://apt.postgresql.org/pub/repos/apt/ jammy-pgdg main', 'key': 'https://apt.postgresql.org/pub/repos/apt/ACCC4CF8.asc'})[0m
+[0;33mchanged: [192.168.20.180] => (item={'repo': 'deb https://apt.postgresql.org/pub/repos/apt/ jammy-pgdg main', 'key': 'https://apt.postgresql.org/pub/repos/apt/ACCC4CF8.asc'})[0m
+
+TASK [vitabaks.autobase.add_repository : Update apt cache] *********************
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.add_repository : Update apt cache] *********************
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.packages : Update apt cache] ***************************
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.packages : Install system packages] ********************
+[0;33mchanged: [192.168.20.180] => (item=python3-dev)[0m
+[0;33mchanged: [192.168.20.177] => (item=python3-dev)[0m
+[0;33mchanged: [192.168.20.177] => (item=moreutils)[0m
+[0;33mchanged: [192.168.20.180] => (item=moreutils)[0m
+[0;33mchanged: [192.168.20.177] => (item=dnsutils)[0m
+[0;33mchanged: [192.168.20.180] => (item=dnsutils)[0m
+[0;33mchanged: [192.168.20.177] => (item=locales-all)[0m
+[0;33mchanged: [192.168.20.180] => (item=locales-all)[0m
+[0;33mchanged: [192.168.20.177] => (item=python3-psycopg2)[0m
+[0;33mchanged: [192.168.20.180] => (item=python3-psycopg2)[0m
+[0;33mchanged: [192.168.20.180] => (item=python3-pip)[0m
+[0;32mok: [192.168.20.180] => (item=gcc)[0m
+[0;33mchanged: [192.168.20.177] => (item=python3-pip)[0m
+[0;32mok: [192.168.20.177] => (item=gcc)[0m
+[0;33mchanged: [192.168.20.180] => (item=acl)[0m
+[0;33mchanged: [192.168.20.177] => (item=acl)[0m
+[0;32mok: [192.168.20.177] => (item=unzip)[0m
+
+TASK [vitabaks.autobase.packages : Ensure postgresql database-cluster manager package] ***
+[0;33mchanged: [192.168.20.177][0m
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.packages : Disable initializing of a default postgresql cluster] ***
+[0;33mchanged: [192.168.20.177][0m
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.packages : Disable log rotation with logrotate for postgresql] ***
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.packages : Install PostgreSQL packages] ****************
+[0;33mchanged: [192.168.20.177] => (item=postgresql-18)[0m
+[0;32mok: [192.168.20.177] => (item=postgresql-client-18)[0m
+[0;32mok: [192.168.20.177] => (item=postgresql-contrib-18)[0m
+[0;33mchanged: [192.168.20.180] => (item=postgresql-18)[0m
+[0;32mok: [192.168.20.180] => (item=postgresql-client-18)[0m
+[0;32mok: [192.168.20.180] => (item=postgresql-contrib-18)[0m
+[0;33mchanged: [192.168.20.180] => (item=postgresql-server-dev-18)[0m
+[0;33mchanged: [192.168.20.177] => (item=postgresql-server-dev-18)[0m
+[0;33mchanged: [192.168.20.180] => (item=postgresql-18-dbgsym)[0m
+[0;33mchanged: [192.168.20.177] => (item=postgresql-18-dbgsym)[0m
+
+TASK [vitabaks.autobase.sudo : Add user to /etc/sudoers.d/] ********************
+[0;33mchanged: [192.168.20.180] => (item={'name': 'postgres', 'nopasswd': 'yes', 'commands': 'ALL'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'postgres', 'nopasswd': 'yes', 'commands': 'ALL'})[0m
+
+TASK [vitabaks.autobase.swap : Ensure swap exists] *****************************
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.swap : Create swap file] *******************************
+[0;33mchanged: [192.168.20.177][0m
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.swap : Set permissions on swap file] *******************
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.swap : Make swap file if necessary] ********************
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.swap : Run swapon on the swap file] ********************
+[0;33mchanged: [192.168.20.177][0m
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.swap : Manage swap file entry in fstab] ****************
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.sysctl : Build a sysctl_conf dynamic variable] *********
+[0;32mok: [192.168.20.180] => (item=master)[0m
+[0;32mok: [192.168.20.180] => (item=postgres_cluster)[0m
+[0;32mok: [192.168.20.177] => (item=etcd_cluster)[0m
+[0;32mok: [192.168.20.177] => (item=postgres_cluster)[0m
+[0;32mok: [192.168.20.177] => (item=replica)[0m
+
+TASK [vitabaks.autobase.sysctl : Setting kernel parameters] ********************
+[0;33mchanged: [192.168.20.180] => (item={'name': 'vm.overcommit_memory', 'value': '2'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'vm.overcommit_memory', 'value': '2'})[0m
+[0;33mchanged: [192.168.20.180] => (item={'name': 'vm.swappiness', 'value': '1'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'vm.swappiness', 'value': '1'})[0m
+[0;33mchanged: [192.168.20.180] => (item={'name': 'vm.min_free_kbytes', 'value': '102400'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'vm.min_free_kbytes', 'value': '102400'})[0m
+[0;33mchanged: [192.168.20.180] => (item={'name': 'vm.dirty_expire_centisecs', 'value': '1000'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'vm.dirty_expire_centisecs', 'value': '1000'})[0m
+[0;33mchanged: [192.168.20.180] => (item={'name': 'vm.dirty_background_bytes', 'value': '67108864'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'vm.dirty_background_bytes', 'value': '67108864'})[0m
+[0;33mchanged: [192.168.20.180] => (item={'name': 'vm.dirty_bytes', 'value': '536870912'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'vm.dirty_bytes', 'value': '536870912'})[0m
+[0;33mchanged: [192.168.20.180] => (item={'name': 'vm.zone_reclaim_mode', 'value': '0'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'vm.zone_reclaim_mode', 'value': '0'})[0m
+[0;33mchanged: [192.168.20.180] => (item={'name': 'kernel.numa_balancing', 'value': '0'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'kernel.numa_balancing', 'value': '0'})[0m
+[0;33mchanged: [192.168.20.180] => (item={'name': 'kernel.sched_autogroup_enabled', 'value': '0'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'kernel.sched_autogroup_enabled', 'value': '0'})[0m
+[0;33mchanged: [192.168.20.180] => (item={'name': 'net.ipv4.ip_nonlocal_bind', 'value': '1'})[0m
+[0;33mchanged: [192.168.20.180] => (item={'name': 'net.ipv4.ip_forward', 'value': '1'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'net.ipv4.ip_nonlocal_bind', 'value': '1'})[0m
+[0;33mchanged: [192.168.20.180] => (item={'name': 'net.ipv4.ip_local_port_range', 'value': '10000 65535'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'net.ipv4.ip_forward', 'value': '1'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'net.ipv4.ip_local_port_range', 'value': '10000 65535'})[0m
+[0;33mchanged: [192.168.20.180] => (item={'name': 'net.core.netdev_max_backlog', 'value': '10000'})[0m
+[0;33mchanged: [192.168.20.180] => (item={'name': 'net.ipv4.tcp_max_syn_backlog', 'value': '8192'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'net.core.netdev_max_backlog', 'value': '10000'})[0m
+[0;33mchanged: [192.168.20.180] => (item={'name': 'net.core.somaxconn', 'value': '65535'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'net.ipv4.tcp_max_syn_backlog', 'value': '8192'})[0m
+[0;33mchanged: [192.168.20.180] => (item={'name': 'net.ipv4.tcp_tw_reuse', 'value': '1'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'net.core.somaxconn', 'value': '65535'})[0m
+[0;33mchanged: [192.168.20.177] => (item={'name': 'net.ipv4.tcp_tw_reuse', 'value': '1'})[0m
+
+TASK [vitabaks.autobase.transparent_huge_pages : Create systemd service "disable-transparent-huge-pages.service"] ***
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+RUNNING HANDLER [vitabaks.autobase.transparent_huge_pages : Start disable-transparent-huge-pages service] ***
+[0;33mchanged: [192.168.20.177][0m
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.pam_limits : Linux PAM limits | add or modify nofile limits] ***
+[0;33mchanged: [192.168.20.180] => (item={'limit_type': 'soft', 'limit_item': 'nofile', 'value': 65536})[0m
+[0;33mchanged: [192.168.20.177] => (item={'limit_type': 'soft', 'limit_item': 'nofile', 'value': 65536})[0m
+[0;33mchanged: [192.168.20.177] => (item={'limit_type': 'hard', 'limit_item': 'nofile', 'value': 200000})[0m
+[0;33mchanged: [192.168.20.180] => (item={'limit_type': 'hard', 'limit_item': 'nofile', 'value': 200000})[0m
+
+TASK [vitabaks.autobase.locales : Generate locales] ****************************
+[0;32mok: [192.168.20.180] => (item={'language_country': 'en_US', 'encoding': 'UTF-8'})[0m
+[0;32mok: [192.168.20.177] => (item={'language_country': 'en_US', 'encoding': 'UTF-8'})[0m
+
+TASK [vitabaks.autobase.locales : Set locale "en_US.UTF-8" into /etc/default/locale] ***
+[0;32mok: [192.168.20.180] => (item=LANG=en_US.UTF-8)[0m
+[0;32mok: [192.168.20.177] => (item=LANG=en_US.UTF-8)[0m
+[0;33mchanged: [192.168.20.180] => (item=LANGUAGE=en_US.UTF-8)[0m
+[0;33mchanged: [192.168.20.177] => (item=LANGUAGE=en_US.UTF-8)[0m
+[0;33mchanged: [192.168.20.180] => (item=LC_ALL=en_US.UTF-8)[0m
+[0;33mchanged: [192.168.20.177] => (item=LC_ALL=en_US.UTF-8)[0m
+
+TASK [vitabaks.autobase.ntp : Stop and disable systemd-timesyncd service] ******
+[0;32mok: [192.168.20.177][0m
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.ntp : Install chrony package] **************************
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.ntp : Copy the chrony.conf file] ***********************
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+PLAY [vitabaks.autobase.balancers | Configure HAProxy load balancers] **********
+[0;36mskipping: no hosts matched[0m
+[1;35m[WARNING]: Could not match supplied host pattern, ignoring: pgbackrest[0m
+
+PLAY [vitabaks.autobase.deploy_pgcluster | Install and configure pgBackRest] ***
+
+TASK [Gathering Facts] *********************************************************
+[0;32mok: [192.168.20.177][0m
+[0;32mok: [192.168.20.180][0m
+
+PLAY [vitabaks.autobase.deploy_pgcluster | PostgreSQL Cluster Deployment] ******
+
+TASK [Gathering Facts] *********************************************************
+[0;32mok: [192.168.20.177][0m
+[0;32mok: [192.168.20.180][0m
+
+TASK [Generate Postgres TLS certificate] ***************************************
+[0;36mincluded: vitabaks.autobase.tls_certificate for 192.168.20.180, 192.168.20.177[0m
+
+TASK [vitabaks.autobase.tls_certificate : Ensure TLS directory exist] **********
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Check if TLS CA cert already exists] ***
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.tls_certificate : Check if TLS server cert already exists] ***
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.tls_certificate : Check if TLS server key already exists] ***
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.tls_certificate : Generate subjectAltName entries for all hosts] ***
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.tls_certificate : Display Certificate subjectAltName future value] ***
+[0;32mok: [192.168.20.180] => {[0m
+[0;32m    "msg": "SubjectAltName = DNS:srv-deploy-eng,DNS:jenkins,DNS:vicall.local,DNS:localhost,IP:192.168.20.180,IP:10.244.1.0,IP:127.0.0.1"[0m
+[0;32m}[0m
+
+TASK [vitabaks.autobase.tls_certificate : Generate CA private key] *************
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.tls_certificate : Create CSR for CA certificate] *******
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.tls_certificate : Create self-signed CA certificate from CSR] ***
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.tls_certificate : Create server private key] ***********
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.tls_certificate : Create server CSR] *******************
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.tls_certificate : Sign server certificate with the CA] ***
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.tls_certificate : Write server certificate] ************
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [Copy Postgres TLS certificate, key and CA to all nodes] ******************
+[0;36mincluded: vitabaks.autobase.tls_certificate for 192.168.20.180, 192.168.20.177[0m
+
+TASK [vitabaks.autobase.tls_certificate : Fetch TLS certificate, key and CA from master node] ***
+[0;32mok: [192.168.20.180] => (item=server.key)[0m
+[0;32mok: [192.168.20.180] => (item=server.crt)[0m
+[0;32mok: [192.168.20.180] => (item=ca.crt)[0m
+
+TASK [vitabaks.autobase.tls_certificate : Set variable: tls_files] *************
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.tls_certificate : Create directory /etc/tls] ***********
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Copy TLS certificate, key and CA to all nodes] ***
+[0;33mchanged: [192.168.20.180] => (item=/etc/tls/server.crt)[0m
+[0;33mchanged: [192.168.20.177] => (item=/etc/tls/server.crt)[0m
+[0;33mchanged: [192.168.20.180] => (item=/etc/tls/ca.crt)[0m
+[0;33mchanged: [192.168.20.177] => (item=/etc/tls/ca.crt)[0m
+[0;33mchanged: [192.168.20.180] => (item=/etc/tls/server.key)[0m
+[0;33mchanged: [192.168.20.177] => (item=/etc/tls/server.key)[0m
+
+TASK [vitabaks.autobase.pgbouncer : Install pgbouncer package] *****************
+[0;33mchanged: [192.168.20.177][0m
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.pgbouncer : Ensure config directory "/etc/pgbouncer" exist] ***
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.pgbouncer : Ensure log directory "/var/log/pgbouncer" exist] ***
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.pgbouncer : Check if pgbouncer systemd service file exists] ***
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.pgbouncer : Stop and disable standard init script] *****
+[0;33mchanged: [192.168.20.177][0m
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.pgbouncer : Configure pgbouncer systemd service file] ***
+[0;33mchanged: [192.168.20.180] => (item=pgbouncer)[0m
+[0;33mchanged: [192.168.20.177] => (item=pgbouncer)[0m
+
+TASK [vitabaks.autobase.pgbouncer : Ensure pgbouncer service is enabled] *******
+[0;33mchanged: [192.168.20.180] => (item=pgbouncer)[0m
+[0;33mchanged: [192.168.20.177] => (item=pgbouncer)[0m
+
+TASK [vitabaks.autobase.pgbouncer : Enable log rotation with logrotate] ********
+[0;33mchanged: [192.168.20.177] => (item=pgbouncer)[0m
+[0;33mchanged: [192.168.20.180] => (item=pgbouncer)[0m
+
+TASK [vitabaks.autobase.pgbouncer : Configure pgbouncer.ini] *******************
+[0;33mchanged: [192.168.20.180] => (item=pgbouncer)[0m
+[0;33mchanged: [192.168.20.177] => (item=pgbouncer)[0m
+
+TASK [vitabaks.autobase.pgpass : Create postgres home directory (/var/lib/postgresql)] ***
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.pgpass : Configure a password file (/var/lib/postgresql/.pgpass)] ***
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+RUNNING HANDLER [vitabaks.autobase.pgbouncer : Restart pgbouncer service] ******
+[0;33mchanged: [192.168.20.180] => (item=pgbouncer)[0m
+[0;33mchanged: [192.168.20.177] => (item=pgbouncer)[0m
+
+RUNNING HANDLER [vitabaks.autobase.pgbouncer : Wait for port "6432" to become open on the host] ***
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+RUNNING HANDLER [vitabaks.autobase.pgbouncer : Reload pgbouncer service] *******
+[0;33mchanged: [192.168.20.180] => (item=pgbouncer)[0m
+[0;33mchanged: [192.168.20.177] => (item=pgbouncer)[0m
+
+TASK [vitabaks.autobase.patroni : Install patroni package] *********************
+[0;33mchanged: [192.168.20.177][0m
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.patroni : Create conf directory] ***********************
+[0;33mchanged: [192.168.20.177][0m
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [Copy etcd cert files for patroni] ****************************************
+[0;36mincluded: vitabaks.autobase.tls_certificate for 192.168.20.180, 192.168.20.177[0m
+
+TASK [vitabaks.autobase.tls_certificate : Fetch TLS certificate, key and CA from master node] ***
+[0;32mok: [192.168.20.180 -> 192.168.20.177] => (item=server.key)[0m
+[0;32mok: [192.168.20.180 -> 192.168.20.177] => (item=server.crt)[0m
+[0;32mok: [192.168.20.180 -> 192.168.20.177] => (item=ca.crt)[0m
+
+TASK [vitabaks.autobase.tls_certificate : Set variable: tls_files] *************
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.tls_certificate : Create directory /etc/patroni/tls/etcd] ***
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Copy TLS certificate, key and CA to all nodes] ***
+[0;33mchanged: [192.168.20.180] => (item=/etc/patroni/tls/etcd/server.crt)[0m
+[0;33mchanged: [192.168.20.177] => (item=/etc/patroni/tls/etcd/server.crt)[0m
+[0;33mchanged: [192.168.20.180] => (item=/etc/patroni/tls/etcd/ca.crt)[0m
+[0;33mchanged: [192.168.20.177] => (item=/etc/patroni/tls/etcd/ca.crt)[0m
+[0;33mchanged: [192.168.20.180] => (item=/etc/patroni/tls/etcd/server.key)[0m
+[0;33mchanged: [192.168.20.177] => (item=/etc/patroni/tls/etcd/server.key)[0m
+
+TASK [vitabaks.autobase.patroni : Generate /etc/patroni/patroni.yml] ***********
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.patroni : Create patroni log directory] ****************
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.patroni : Copy systemd service file "/etc/systemd/system/patroni.service"] ***
+[0;33mchanged: [192.168.20.177][0m
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.patroni : Prepare PostgreSQL | make sure the postgresql log directory "/var/log/postgresql" exists] ***
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.patroni : Prepare PostgreSQL | make sure PostgreSQL home directory "/var/lib/postgresql"] ***
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.patroni : Prepare PostgreSQL | make sure PostgreSQL data directory "/var/lib/postgresql/18/main" exists] ***
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.patroni : Prepare PostgreSQL | make sure PostgreSQL unix socket directory "/var/run/postgresql" exists] ***
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.patroni : Prepare PostgreSQL | make sure PostgreSQL log directory "/var/log/postgresql" exists] ***
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.patroni : Prepare PostgreSQL | make sure PostgreSQL config directory exists] ***
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.patroni : Prepare PostgreSQL | make sure PostgreSQL config files exists] ***
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.patroni : Prepare PostgreSQL | generate default PostgreSQL config files] ***
+[1;35m[WARNING]: Module remote_tmp /tmp/postgres/ansible did not exist and was created with a mode of 0700, this may cause issues when running as another user. To avoid this, create the remote_tmp dir with the correct permissions manually[0m
+[0;33mchanged: [192.168.20.177][0m
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.patroni : Prepare PostgreSQL | Make sure the patroni service is stopped] ***
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.patroni : Prepare PostgreSQL | make sure the postgres home directory "/var/lib/postgresql"] ***
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.patroni : Prepare PostgreSQL | make sure the data directory "/var/lib/postgresql/18/main" is empty] ***
+[0;33mchanged: [192.168.20.180] => (item=absent)[0m
+[0;33mchanged: [192.168.20.177] => (item=absent)[0m
+[0;33mchanged: [192.168.20.180] => (item=directory)[0m
+[0;33mchanged: [192.168.20.177] => (item=directory)[0m
+
+TASK [vitabaks.autobase.patroni : Prepare PostgreSQL | make sure PostgreSQL unix socket directory "/var/run/postgresql" exists] ***
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.patroni : Prepare PostgreSQL | make sure PostgreSQL log directory "/var/log/postgresql" exists] ***
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.patroni : Start patroni service on the Master server] ***
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.patroni : Wait for port 8008 to become open on the host] ***
+[0;32mok: [192.168.20.180][0m
+[1;30mFAILED - RETRYING: [192.168.20.180]: Check PostgreSQL is started and accepting connections (1000 retries left).[0m
+[1;30mFAILED - RETRYING: [192.168.20.180]: Check PostgreSQL is started and accepting connections (999 retries left).[0m
+[1;30mFAILED - RETRYING: [192.168.20.180]: Check PostgreSQL is started and accepting connections (998 retries left).[0m
+[1;30mFAILED - RETRYING: [192.168.20.180]: Check PostgreSQL is started and accepting connections (997 retries left).[0m
+[1;30mFAILED - RETRYING: [192.168.20.180]: Check PostgreSQL is started and accepting connections (996 retries left).[0m
+^C[0;31m[ERROR]: User interrupted execution[0m

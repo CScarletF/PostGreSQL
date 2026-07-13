@@ -1,0 +1,20 @@
+[etcd_cluster]
+192.168.20.177
+
+[master]
+192.168.20.180 hostname=srv-deploy-eng postgresql_exists=false ansible_ssh_private_key_file=/root/.ssh/ansible_srv_deploy_eng_key
+
+[replica]
+192.168.20.177 hostname=jenkins postgresql_exists=false ansible_ssh_private_key_file=/root/.ssh/ansible_jenkins_key bind_address=192.168.20.177
+
+[postgres_cluster:children]
+master
+replica
+
+[all:vars]
+ansible_connection=ssh
+ansible_ssh_port=22
+ansible_ssh_user=ansible_svc
+ansible_python_interpreter=/usr/bin/python3
+ansible_become=true
+ansible_become_method=sudo

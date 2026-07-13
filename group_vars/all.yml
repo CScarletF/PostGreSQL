@@ -1,0 +1,69 @@
+---
+# Autobase / Patroni cluster configuration
+# Deployed via autobase/automation:2.8.0 (Docker-wrapped Ansible)
+# See: https://github.com/autobase-tech/autobase/blob/main/automation/roles/common/defaults/main.yml
+# for the full list of overridable defaults. Only variables relevant to this
+# project's scope are set or commented on below.
+
+# --- Cluster identity ---
+patroni_cluster_name: "postgres_cluster_template"
+# Propagates into etcd_cluster_name (etcd-<name>) and pgbackrest_stanza (<name>).
+
+# --- PostgreSQL version ---
+postgresql_version: 17
+# Default in 2.8.0 is 18. Pinned to 17 deliberately: N-1 major version,
+# more point-release maturity than 18 (~9-10mo old) while still current
+# and fully supported/tested by Autobase.
+
+# --- Memory tuning (host-level, not stored in DCS) ---
+# Default auto-calculates shared_buffers as 25% of total system RAM, which
+# assumes Postgres has the host to itself. srv-deploy-eng also runs a full
+# Kubernetes control plane + Longhorn/MetalLB DaemonSets, and strict memory
+# overcommit (vm.overcommit_memory=2, set by Autobase's sysctl role) counts
+# ALL committed memory cluster-wide against a hard ceiling. The 25%-of-RAM
+# default (~1.9GB) exceeded available overcommit headroom (~1.06GB) on this
+# shared host, causing Patroni/initdb to fail with "could not map anonymous
+# shared memory: Cannot allocate memory". Overridden below to a value that
+# fits comfortably within actual available headroom on this specific box.
+local_postgresql_parameters:
+  - { option: "shared_buffers", value: "512MB" }
+  - { option: "effective_cache_size", value: "1536MB" }
+
+# --- Replication mode ---
+synchronous_mode: true
+synchronous_mode_strict: true
+# strict=true blocks ALL writes to master if no sync replica is reachable —
+# zero-data-loss guarantee, chosen deliberately. With only 1 replica in this
+# 2-node setup, that replica becomes a single point of failure for WRITE
+# availability (reads still work). This is an intentional PoC finding to be
+# demonstrated separately from primary-failover testing, not a bug.
+
+# synchronous_node_count: 1  # (default) number of standbys required to ack
+#   a sync write. NOTE: this is a ratio against *healthy* replicas, not a
+#   raw node count — adding a 3rd node later does NOT fix the above SPOF
+#   unless this value is reconsidered relative to total replica count.
+
+# --- Load balancing (Phase 2, not used in this deployment) ---
+with_haproxy_load_balancing: false
+# Phase 1 = plain replication + failover only. HAProxy read/write load
+# balancing is a planned Phase 2 RnD addition, deliberately out of scope
+# here and to be documented separately when enabled.
+
+# --- Connection pooling (not used in this deployment) ---
+pgbouncer_install: false
+# Defaults to true upstream. Disabled here because PgBouncer solves a
+# connection-scaling problem (many short-lived client connections), which
+# is unrelated to what Phase 1 is testing (Patroni/etcd failover behavior).
+# Revisit if/when Phase 2 introduces realistic client-traffic simulation
+# through HAProxy.
+
+# --- Backup/restore (not used in this deployment) ---
+# pgbackrest_install: false  # (default) pgBackRest backup/restore tooling.
+#   Out of scope for this PoC — no backup strategy is being tested here.
+# wal_g_install: false       # (default) WAL-G as an alternative backup tool.
+
+# --- Monitoring (installed by default, left as-is) ---
+# netdata_install: true  # (default) lightweight monitoring dashboard,
+#   reachable at http://<node>:19999 after deploy. Left at default since
+#   it's useful for observing the cluster during failover tests, at
+#   negligible resource cost on this VM.
