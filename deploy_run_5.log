@@ -1,0 +1,172 @@
+
+PLAY [vitabaks.autobase.balancers | Configure HAProxy load balancers] **********
+
+TASK [Gathering Facts] *********************************************************
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [Gather package facts] ****************************************************
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [Update apt cache] ********************************************************
+[0;33mchanged: [192.168.20.177][0m
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.hostname : Change hostname] ****************************
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.hostname : Change hostname in /etc/hosts] **************
+[0;32mok: [192.168.20.180] => (item=(censored due to no_log))[0m
+[0;32mok: [192.168.20.177] => (item=(censored due to no_log))[0m
+
+TASK [vitabaks.autobase.sysctl : Build a sysctl_conf dynamic variable] *********
+[0;32mok: [192.168.20.180] => (item=balancers)[0m
+[0;32mok: [192.168.20.180] => (item=master)[0m
+[0;32mok: [192.168.20.180] => (item=postgres_cluster)[0m
+[0;32mok: [192.168.20.177] => (item=balancers)[0m
+[0;32mok: [192.168.20.177] => (item=etcd_cluster)[0m
+[0;32mok: [192.168.20.177] => (item=postgres_cluster)[0m
+[0;32mok: [192.168.20.177] => (item=replica)[0m
+
+TASK [vitabaks.autobase.sysctl : Setting kernel parameters] ********************
+[0;32mok: [192.168.20.180] => (item={'name': 'net.ipv4.ip_nonlocal_bind', 'value': '1'})[0m
+[0;32mok: [192.168.20.177] => (item={'name': 'net.ipv4.ip_nonlocal_bind', 'value': '1'})[0m
+[0;32mok: [192.168.20.180] => (item={'name': 'net.ipv4.ip_forward', 'value': '1'})[0m
+[0;32mok: [192.168.20.177] => (item={'name': 'net.ipv4.ip_forward', 'value': '1'})[0m
+[0;32mok: [192.168.20.180] => (item={'name': 'net.ipv4.ip_local_port_range', 'value': '10000 65535'})[0m
+[0;32mok: [192.168.20.177] => (item={'name': 'net.ipv4.ip_local_port_range', 'value': '10000 65535'})[0m
+[0;32mok: [192.168.20.180] => (item={'name': 'net.core.netdev_max_backlog', 'value': '10000'})[0m
+[0;32mok: [192.168.20.177] => (item={'name': 'net.core.netdev_max_backlog', 'value': '10000'})[0m
+[0;32mok: [192.168.20.180] => (item={'name': 'net.ipv4.tcp_max_syn_backlog', 'value': '8192'})[0m
+[0;32mok: [192.168.20.177] => (item={'name': 'net.ipv4.tcp_max_syn_backlog', 'value': '8192'})[0m
+[0;32mok: [192.168.20.180] => (item={'name': 'net.core.somaxconn', 'value': '65535'})[0m
+[0;32mok: [192.168.20.177] => (item={'name': 'net.core.somaxconn', 'value': '65535'})[0m
+[0;32mok: [192.168.20.180] => (item={'name': 'net.ipv4.tcp_tw_reuse', 'value': '1'})[0m
+[0;32mok: [192.168.20.177] => (item={'name': 'net.ipv4.tcp_tw_reuse', 'value': '1'})[0m
+[0;32mok: [192.168.20.180] => (item={'name': 'vm.overcommit_memory', 'value': '2'})[0m
+[0;32mok: [192.168.20.177] => (item={'name': 'vm.overcommit_memory', 'value': '2'})[0m
+[0;32mok: [192.168.20.180] => (item={'name': 'vm.swappiness', 'value': '1'})[0m
+[0;32mok: [192.168.20.177] => (item={'name': 'vm.swappiness', 'value': '1'})[0m
+[0;32mok: [192.168.20.180] => (item={'name': 'vm.min_free_kbytes', 'value': '102400'})[0m
+[0;32mok: [192.168.20.177] => (item={'name': 'vm.min_free_kbytes', 'value': '102400'})[0m
+[0;32mok: [192.168.20.180] => (item={'name': 'vm.dirty_expire_centisecs', 'value': '1000'})[0m
+[0;32mok: [192.168.20.177] => (item={'name': 'vm.dirty_expire_centisecs', 'value': '1000'})[0m
+[0;32mok: [192.168.20.180] => (item={'name': 'vm.dirty_background_bytes', 'value': '67108864'})[0m
+[0;32mok: [192.168.20.177] => (item={'name': 'vm.dirty_background_bytes', 'value': '67108864'})[0m
+[0;32mok: [192.168.20.180] => (item={'name': 'vm.dirty_bytes', 'value': '536870912'})[0m
+[0;32mok: [192.168.20.177] => (item={'name': 'vm.dirty_bytes', 'value': '536870912'})[0m
+[0;32mok: [192.168.20.180] => (item={'name': 'vm.zone_reclaim_mode', 'value': '0'})[0m
+[0;32mok: [192.168.20.177] => (item={'name': 'vm.zone_reclaim_mode', 'value': '0'})[0m
+[0;32mok: [192.168.20.180] => (item={'name': 'kernel.numa_balancing', 'value': '0'})[0m
+[0;32mok: [192.168.20.177] => (item={'name': 'kernel.numa_balancing', 'value': '0'})[0m
+[0;32mok: [192.168.20.180] => (item={'name': 'kernel.sched_autogroup_enabled', 'value': '0'})[0m
+[0;32mok: [192.168.20.177] => (item={'name': 'kernel.sched_autogroup_enabled', 'value': '0'})[0m
+
+TASK [vitabaks.autobase.haproxy : Install HAProxy package] *********************
+[0;33mchanged: [192.168.20.177][0m
+[1;30mFAILED - RETRYING: [192.168.20.180]: Install HAProxy package (3 retries left).[0m
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.haproxy : Make sure the kernel parameter "net.ipv4.ip_nonlocal_bind" are enabled] ***
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.haproxy : Add haproxy group] ***************************
+[0;32mok: [192.168.20.180][0m
+[0;32mok: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.haproxy : Add haproxy user] ****************************
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.haproxy : Create directories] **************************
+[0;33mchanged: [192.168.20.177] => (item=/etc/haproxy)[0m
+[0;33mchanged: [192.168.20.180] => (item=/etc/haproxy)[0m
+[0;32mok: [192.168.20.180] => (item=/run/haproxy)[0m
+[0;32mok: [192.168.20.177] => (item=/run/haproxy)[0m
+[0;33mchanged: [192.168.20.180] => (item=/var/lib/haproxy/dev)[0m
+[0;33mchanged: [192.168.20.177] => (item=/var/lib/haproxy/dev)[0m
+
+TASK [vitabaks.autobase.haproxy : Generate conf file "/etc/haproxy/haproxy.cfg"] ***
+[0;33mchanged: [192.168.20.177][0m
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.haproxy : Generate systemd service file "/etc/systemd/system/haproxy.service"] ***
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.confd : Download confd package] ************************
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.confd : Extract confd into /tmp/] **********************
+[0;33mchanged: [192.168.20.177][0m
+[0;33mchanged: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.confd : Copy confd binary file to /usr/local/bin/] *****
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.confd : Create conf directories] ***********************
+[0;33mchanged: [192.168.20.180] => (item=/etc/confd/conf.d)[0m
+[0;33mchanged: [192.168.20.177] => (item=/etc/confd/conf.d)[0m
+[0;33mchanged: [192.168.20.177] => (item=/etc/confd/templates)[0m
+[0;33mchanged: [192.168.20.180] => (item=/etc/confd/templates)[0m
+
+TASK [Copy etcd cert files for confd] ******************************************
+[0;36mincluded: vitabaks.autobase.tls_certificate for 192.168.20.180, 192.168.20.177[0m
+
+TASK [vitabaks.autobase.tls_certificate : Fetch TLS certificate, key and CA from master node] ***
+[0;32mok: [192.168.20.180 -> 192.168.20.177] => (item=server.key)[0m
+[0;32mok: [192.168.20.180 -> 192.168.20.177] => (item=server.crt)[0m
+[0;32mok: [192.168.20.180 -> 192.168.20.177] => (item=ca.crt)[0m
+
+TASK [vitabaks.autobase.tls_certificate : Set variable: tls_files] *************
+[0;32mok: [192.168.20.180][0m
+
+TASK [vitabaks.autobase.tls_certificate : Create directory /etc/confd/tls/etcd] ***
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.tls_certificate : Copy TLS certificate, key and CA to all nodes] ***
+[0;33mchanged: [192.168.20.180] => (item=/etc/confd/tls/etcd/server.crt)[0m
+[0;33mchanged: [192.168.20.177] => (item=/etc/confd/tls/etcd/server.crt)[0m
+[0;33mchanged: [192.168.20.180] => (item=/etc/confd/tls/etcd/ca.crt)[0m
+[0;33mchanged: [192.168.20.177] => (item=/etc/confd/tls/etcd/ca.crt)[0m
+[0;33mchanged: [192.168.20.180] => (item=/etc/confd/tls/etcd/server.key)[0m
+[0;33mchanged: [192.168.20.177] => (item=/etc/confd/tls/etcd/server.key)[0m
+
+TASK [vitabaks.autobase.confd : Generate conf file "/etc/confd/confd.toml"] ****
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.confd : Generate conf file "/etc/confd/conf.d/haproxy.toml"] ***
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.confd : Generate template "/etc/confd/templates/haproxy.tmpl"] ***
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+TASK [vitabaks.autobase.confd : Copy systemd service file] *********************
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+RUNNING HANDLER [vitabaks.autobase.haproxy : Restart haproxy service] **********
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+RUNNING HANDLER [vitabaks.autobase.haproxy : Check HAProxy is started and accepting connections] ***
+[0;32mok: [192.168.20.177][0m
+[0;32mok: [192.168.20.180][0m
+
+RUNNING HANDLER [vitabaks.autobase.confd : Restart confd service] **************
+[0;33mchanged: [192.168.20.180][0m
+[0;33mchanged: [192.168.20.177][0m
+
+PLAY RECAP *********************************************************************
+[0;33m192.168.20.177[0m             : [0;32mok=28  [0m [0;33mchanged=19  [0m unreachable=0    failed=0    [0;36mskipped=45  [0m rescued=0    ignored=0   
+[0;33m192.168.20.180[0m             : [0;32mok=30  [0m [0;33mchanged=18  [0m unreachable=0    failed=0    [0;36mskipped=51  [0m rescued=0    ignored=0   
+

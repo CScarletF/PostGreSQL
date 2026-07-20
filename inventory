@@ -2,14 +2,30 @@
 192.168.20.177
 
 [master]
-192.168.20.180 hostname=srv-deploy-eng postgresql_exists=false ansible_ssh_private_key_file=/root/.ssh/ansible_srv_deploy_eng_key
+192.168.20.180 hostname=srv-deploy-eng postgresql_exists=false ansible_ssh_private_key_file=/root/.ssh/ansible_srv_deploy_eng_key bind_address=192.168.20.180
+# bind_address added for Phase 2: HAProxy's post-restart handler runs a
+# wait_for check against haproxy_listen_port.stats on this address, so it
+# needs to be explicit here now rather than left to auto-detection — same
+# class of problem bind_address already solves for jenkins below (avoiding
+# the wrong interface being picked up on a dual-use K8s/Postgres host).
 
 [replica]
 192.168.20.177 hostname=jenkins postgresql_exists=false ansible_ssh_private_key_file=/root/.ssh/ansible_jenkins_key bind_address=192.168.20.177
+# bind_address pinned: resolves Flannel CNI virtual interface IP
+# auto-detection picking the wrong address for TLS SANs / pg_hba.conf
+# replication rules (Phase 1 finding).
 
 [postgres_cluster:children]
 master
 replica
+
+# HAProxy deployed on both nodes — joint rollout per Phase 2 architectural
+# decision (Option C: co-located with Postgres, PoC-grade, not
+# production-grade). Both IPs required so Autobase's haproxy role runs on
+# each host.
+[balancers]
+192.168.20.180
+192.168.20.177
 
 [all:vars]
 ansible_connection=ssh

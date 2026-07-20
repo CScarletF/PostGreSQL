@@ -37,25 +37,76 @@ synchronous_mode_strict: true
 # 2-node setup, that replica becomes a single point of failure for WRITE
 # availability (reads still work). This is an intentional PoC finding to be
 # demonstrated separately from primary-failover testing, not a bug.
+#
+# Kept ON deliberately going into Phase 2 and beyond: this deployment is
+# simulating a larger environment (eventual scale to 3-4 replicas with a
+# 1-2 minimum sync replica requirement), so strict sync behavior needs to
+# be exercised now rather than deferred.
 
 # synchronous_node_count: 1  # (default) number of standbys required to ack
 #   a sync write. NOTE: this is a ratio against *healthy* replicas, not a
 #   raw node count — adding a 3rd node later does NOT fix the above SPOF
 #   unless this value is reconsidered relative to total replica count.
 
-# --- Load balancing (Phase 2, not used in this deployment) ---
-with_haproxy_load_balancing: false
-# Phase 1 = plain replication + failover only. HAProxy read/write load
-# balancing is a planned Phase 2 RnD addition, deliberately out of scope
-# here and to be documented separately when enabled.
+# --- Load balancing (Phase 2: HAProxy read/write load balancing) ---
+with_haproxy_load_balancing: true
+# Enables the haproxy role. Deployed to both nodes as a joint initial
+# rollout (see [balancers] in inventory) — not adding a balancer to an
+# already-running single-node setup.
+
+# Port assignments for each HAProxy listener.
+# stats: web UI showing backend health/traffic (no IP restriction — relying
+#   on local network trust boundary rather than a stats-page allowlist).
+# master: routes to the current Patroni primary only (read/write). Backed
+#   by Patroni's /primary healthcheck.
+# replicas: routes to any healthy replica, sync or async (read-only,
+#   round-robin).
+# replicas_sync: routes only to the synchronous standby (read-only).
+#   Backed by Patroni's /sync healthcheck.
+# replicas_async: routes only to async replicas, excludes the sync
+#   standby (read-only).
+haproxy_listen_port:
+  stats: 7000
+  master: 5000
+  replicas: 5001
+  replicas_sync: 7001
+  replicas_async: 7002
+
+# Connection ceilings — sized for a 2-node PoC, not production load.
+# global: total connections HAProxy will accept across all listeners
+#   combined.
+# master: cap on the read/write listener specifically.
+# replica: cap on each replica-facing listener (shared setting across
+#   replicas / replicas_sync / replicas_async).
+haproxy_maxconn:
+  global: 100
+  master: 50
+  replica: 50
+
+# Idle timeouts before HAProxy drops a connection.
+# client: max idle time on the client-facing side of a connection.
+# server: max idle time on the Postgres-facing side of a connection.
+haproxy_timeout:
+  client: 30s
+  server: 30s
+
+# add_balancer intentionally left unset: this is a first-time joint rollout
+# of HAProxy to both nodes, not adding a balancer to an already-running
+# cluster. Setting this true would trigger Autobase's "fetch existing
+# haproxy.cfg and copy it to the new node" code path, which doesn't apply
+# here.
+
+# cluster_vip intentionally left unset: single floating endpoint via
+# Keepalived VIP is a planned Phase 3 addition. Clients currently need to
+# pick between the two HAProxy IPs directly.
 
 # --- Connection pooling (not used in this deployment) ---
 pgbouncer_install: false
 # Defaults to true upstream. Disabled here because PgBouncer solves a
 # connection-scaling problem (many short-lived client connections), which
-# is unrelated to what Phase 1 is testing (Patroni/etcd failover behavior).
-# Revisit if/when Phase 2 introduces realistic client-traffic simulation
-# through HAProxy.
+# is unrelated to what this PoC is testing (Patroni/etcd failover behavior
+# and HAProxy routing). Revisit if/when a later phase introduces realistic
+# client-traffic simulation.
 
 # --- Backup/restore (not used in this deployment) ---
 # pgbackrest_install: false  # (default) pgBackRest backup/restore tooling.
