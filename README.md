@@ -4,7 +4,7 @@
 
 This project was initiated as an RnD task: evaluate multi-server PostgreSQL setups for a team whose mandate is maximum capability at minimum cost and complexity, using free and open-source tooling. The deliverable is a reproducible, documented proof-of-concept demonstrating automated failover and synchronous replication.
 
-**Phase 1** (below) covers automated failover and synchronous replication. **Phase 2** (further below) covers HAProxy read/write load balancing — a self-directed extension beyond the original assignment scope, documented separately for portfolio purposes.
+**Phase 1** (below) covers automated failover and synchronous replication. **Phase 2** (further below) covers HAProxy read/write load balancing — a self-directed extension beyond the original assignment scope, documented separately for portfolio purposes. **Phase 3** covers a Keepalived VIP for single-endpoint client routing.
 
 ---
 ---
@@ -72,7 +72,7 @@ The following assumptions are baked into this deployment. A future engineer repr
 | srv-deploy-eng | 7.75 GB | 2 vCPU | 134 GB |
 | jenkins | 11.68 GB | 2 vCPU | 45 GB |
 
-**Ansible control machine:** srv-deploy-eng. Ansible is not installed natively — all playbooks are run via the `autobase/automation:2.8.0` Docker image. Docker must be installed on the control node.
+**Ansible control machine:** srv-deploy-eng. Ansible is not installed natively for Autobase-provided playbooks — those are run via the `autobase/automation:2.8.0` Docker image. Docker must be installed on the control node. (Native `ansible-playbook` is also installed and used for custom, non-Autobase roles — see Phase 3.)
 
 **Python 3:** Required on both managed nodes at `/usr/bin/python3`. Ubuntu 22.04 ships this by default.
 
@@ -165,7 +165,7 @@ ansible_become=true
 ansible_become_method=sudo
 ```
 
-`ansible_ssh_private_key_file` paths use `/root/.ssh/` because the Docker container bind-mounts `$HOME/.ssh` to `/root/.ssh` inside the container. The paths must reflect the container's filesystem, not the host's.
+`ansible_ssh_private_key_file` paths use `/root/.ssh/` because the Docker container bind-mounts `$HOME/.ssh` to `/root/.ssh` inside the container. The paths must reflect the container's filesystem, not the host's. **Native (non-Docker) runs of custom playbooks require these same keys to also exist under `/root/.ssh/` on the host itself — see Phase 3 for why and how.**
 
 `bind_address=192.168.20.177` on the replica is required. See [Environmental constraints](#environmental-constraints) for why.
 
@@ -240,9 +240,11 @@ pgbouncer_install: false
 
 # --- Monitoring (installed by default, left as-is) ---
 # netdata_install: true  # (default) lightweight monitoring dashboard,
-#   reachable at http://<node>:19999 after deploy. Left at default since
-#   it's useful for observing the cluster during failover tests, at
-#   negligible resource cost on this VM.
+#   reachable at http://<node>:19999 after deploy. NOTE: NOT negligible —
+#   confirmed ~1.1GB real committed memory on srv-deploy-eng under strict
+#   overcommit (vm.overcommit_memory=2), contributing to an sshd fork
+#   failure during swap-disable work (see Phase 3). Check headroom before
+#   assuming this is free.
 ```
 
 ---
@@ -484,6 +486,8 @@ FATAL: no pg_hba.conf entry for replication connection from host "192.168.20.177
 
 This overrides auto-detection entirely and flows through to all generated configs: TLS SANs, pg_hba.conf, patroni.yml connection addresses, etcd advertise URLs.
 
+**Note (Phase 3 addendum):** this pinning is correct and necessary for Postgres/Patroni's own identity, but does *not* automatically extend correctly to HAProxy — see Phase 3's `bind_address` note below for a case where the same variable, reused for a different purpose, caused a real bug.
+
 ### Shared memory exhaustion under strict overcommit on a shared host
 
 Autobase's sysctl role sets `vm.overcommit_memory=2` (strict accounting) on all managed nodes. PostgreSQL's default `shared_buffers` auto-calculates as 25% of total system RAM. On srv-deploy-eng (7.75 GB RAM), that is approximately 1.9 GB. However, strict overcommit accounting counts all committed memory system-wide against a ceiling of `swap + (RAM × overcommit_ratio)`. With the Kubernetes control plane already consuming ~6.8 GB of committed memory, the available headroom under the strict limit was approximately 1.06 GB — well below Postgres's 2.47 GB shared memory request. Patroni's bootstrap failed with:
@@ -514,7 +518,7 @@ On a dedicated (non-K8s) host, the default auto-calculation is appropriate and t
 
 **No Ansible Vault.** Secrets (the auto-generated PostgreSQL superuser password) appear in plaintext in the Ansible log. Vault integration is the correct next step before committing logs to version control. The inventory itself contains no secrets — SSH key paths only.
 
-**Swap not disabled.** kubeadm requires swap disabled on all nodes. Both hosts currently have swap enabled (4GB, lightly used). Flagged as an outstanding correctness issue — not yet remediated as of Phase 2.
+**Swap — resolved on both hosts as of Phase 3.** kubeadm requires swap disabled on all nodes. Originally flagged as outstanding in Phase 1/2; disabled and confirmed persistent (fstab commented out) on both srv-deploy-eng and jenkins during Phase 3 work. See Phase 3's swap/overcommit notes below for the process and a live incident encountered along the way.
 
 ---
 ---
@@ -537,7 +541,7 @@ HAProxy runs on the same two hosts as PostgreSQL/Patroni (`srv-deploy-eng`, `jen
                      │   Client / App       │
                      └──────────┬───────────┘
                                  │
-                 picks either IP (no VIP yet — Phase 3)
+                 picks either IP, or the Phase 3 VIP (192.168.20.190)
                                  │
           ┌──────────────────────┴──────────────────────┐
           │                                              │
@@ -593,7 +597,8 @@ replica
 # HAProxy deployed on both nodes — joint rollout per Phase 2 architectural
 # decision (Option C: co-located with Postgres, PoC-grade, not
 # production-grade). Both IPs required so Autobase's haproxy role runs on
-# each host.
+# each host. Also reused as the target group for Phase 3's Keepalived and
+# haproxy_vip_bind roles.
 [balancers]
 192.168.20.180
 192.168.20.177
@@ -661,8 +666,16 @@ haproxy_timeout:
 # here.
 
 # cluster_vip intentionally left unset: single floating endpoint via
-# Keepalived VIP is a planned Phase 3 addition. Clients currently need to
-# pick between the two HAProxy IPs directly.
+# Keepalived VIP was a planned Phase 3 addition at the time this section
+# was written. As of Phase 3, the VIP (192.168.20.190) is implemented and
+# verified working — see Phase 3 below. This variable itself remains
+# unset because Phase 3's VIP was implemented via a standalone Keepalived
+# role rather than Autobase's built-in cluster_vip mechanism; kept here
+# unchanged as an accurate historical record of the Phase 2 state.
+
+# --- VIP (Phase 3: Keepalived) ---
+keepalived_vip: 192.168.20.190
+keepalived_interface: ens18
 ```
 
 `pgbouncer_install: false` from Phase 1 is unchanged — no connection pooling introduced in Phase 2.
@@ -703,12 +716,225 @@ Actual deploy result: `failed=0` on both hosts (`ok=28, changed=19` on jenkins; 
 
 Credentials used for this test came from `/var/lib/postgresql/.pgpass` — this is Patroni's internal replication/health-check credential, not necessarily an appropriate credential for real client applications. A separate application-facing role should be provisioned before this cluster is used for anything beyond PoC testing.
 
-Failover-specific testing (does HAProxy routing follow a live `switchover`, not just static role state) is planned but not yet executed — see the separate `failover-tests-phase2.md` test plan.
+## Failover Test Plan (Phase 2) — Status: NOT YET EXECUTED
+
+Purpose: prove HAProxy's routing decisions follow Patroni's live role state
+automatically — no manual HAProxy reconfiguration when the primary changes.
+This is the strongest demonstration of Phase 2's actual value: static
+config would break on failover, and this test is designed to show it
+doesn't.
+
+This section was drafted as a test plan and has **not yet been run**. Run
+the steps in order and record actual output under each step — this is a
+plan, not a report; fill in results as you go (or copy into a versioned
+log per this project's existing convention: `failover_test_run_1.log`,
+etc.).
+
+### Pre-flight
+
+Confirm starting state before triggering anything.
+
+```bash
+sudo patronictl -c /etc/patroni/patroni.yml list
+```
+Record: which node is Leader, which is Sync Standby, timeline number.
+
+```bash
+psql -h 192.168.20.180 -p 5000 -U postgres -c "SELECT pg_is_in_recovery();"
+psql -h 192.168.20.180 -p 5001 -U postgres -c "SELECT pg_is_in_recovery();"
+```
+Expected: 5000 → `f`, 5001 → `t`. Confirms baseline routing is correct
+before the test begins.
+
+```bash
+curl -s "http://192.168.20.180:7000/;csv" | grep -E "^(master|replicas),"
+```
+(Stats page CSV export — gives a clean machine-readable snapshot of which
+backends HAProxy currently considers UP for each listener. Useful as a
+before/after diff.)
+
+### Test 1 — Planned switchover (`patronictl switchover`)
+
+Clean, graceful role change. This is the easy case — Patroni orchestrates
+it, both nodes cooperate.
+
+```bash
+sudo patronictl -c /etc/patroni/patroni.yml switchover
+```
+Follow the interactive prompts: specify the current leader as the node to
+switch away from, and let Patroni pick the target (or specify explicitly).
+Confirm when prompted.
+
+**Immediately after** (within a few seconds — this is testing HAProxy's
+health-check reaction time, not just eventual consistency):
+
+```bash
+sudo patronictl -c /etc/patroni/patroni.yml list
+```
+Confirm the Leader role actually moved.
+
+```bash
+psql -h 192.168.20.180 -p 5000 -U postgres -c "SELECT pg_is_in_recovery();"
+```
+Expected: still `f` — but now answered by the **new** primary. This is the
+actual proof: the query succeeds and returns "not in recovery" without any
+change to the connection string, because HAProxy re-routed automatically.
+
+```bash
+psql -h 192.168.20.180 -p 5001 -U postgres -c "SELECT pg_is_in_recovery();"
+```
+Expected: still `t` — the old primary (now demoted to replica) or the
+existing standby, whichever Patroni assigns.
+
+**Timing measurement** — worth capturing for the write-up: how long
+between the switchover completing (per `patronictl list`) and HAProxy
+correctly reflecting it (per the psql check)? HAProxy's `inter 3s fastinter
+1s fall 3 rise 2-4` settings predict detection within roughly 3-9 seconds.
+Loop the psql check every second for ~15s after switchover to measure this
+empirically rather than assuming the spec numbers hold in practice:
+
+```bash
+for i in $(seq 1 15); do
+  echo "t+${i}s: $(psql -h 192.168.20.180 -p 5000 -U postgres -tAc 'SELECT pg_is_in_recovery();' 2>&1)"
+  sleep 1
+done
+```
+
+**Check the strict-sync interaction** (Phase 1 documented finding — this
+is where it matters in practice): immediately after switchover, is the new
+primary accepting writes, or blocked waiting for a sync standby to catch
+up/reconnect?
+```bash
+psql -h 192.168.20.180 -p 5000 -U postgres -c "CREATE TABLE IF NOT EXISTS failover_test (id serial, ts timestamptz default now());"
+psql -h 192.168.20.180 -p 5000 -U postgres -c "INSERT INTO failover_test DEFAULT VALUES RETURNING *;"
+```
+If this hangs rather than returning immediately, that's the strict-sync
+behavior from Phase 1 manifesting through HAProxy — worth timing and
+documenting as expected, not a bug.
+
+### Test 2 — Unplanned failure (kill the primary's Patroni process)
+
+Rougher case: no graceful handoff, simulates an actual crash.
+
+**Identify current primary first:**
+```bash
+sudo patronictl -c /etc/patroni/patroni.yml list
+```
+
+**On the current primary node**, stop Patroni abruptly (not `switchover` —
+actually kill it):
+```bash
+sudo systemctl stop patroni
+```
+
+**From the other node** (or any client), poll until Patroni promotes the
+standby:
+```bash
+for i in $(seq 1 30); do
+  echo "t+${i}s:"
+  sudo patronictl -c /etc/patroni/patroni.yml list 2>&1
+  sleep 2
+done
+```
+Record how long promotion actually takes — this depends on your DCS TTL
+settings from Phase 1, not HAProxy, but it's the floor for how fast
+HAProxy *can* react (it can't route to a new primary before Patroni
+designates one).
+
+**Confirm HAProxy follows once promotion completes:**
+```bash
+psql -h 192.168.20.180 -p 5000 -U postgres -c "SELECT pg_is_in_recovery();"
+```
+Expected: `f`, answered by the newly-promoted node.
+
+**Recovery — bring the old primary back:**
+```bash
+sudo systemctl start patroni
+```
+Confirm it rejoins as a replica (Phase 1 finding: it does not automatically
+reclaim primary):
+```bash
+sudo patronictl -c /etc/patroni/patroni.yml list
+```
+
+**Confirm HAProxy picks it back up as a valid replica target:**
+```bash
+psql -h 192.168.20.180 -p 5001 -U postgres -c "SELECT pg_is_in_recovery();"
+```
+
+### Test 3 — HAProxy node failure (not Patroni)
+
+Different failure class: what happens if one of the two HAProxy instances
+itself goes down, rather than a Postgres node? Confirms clients aren't
+dependent on a specific HAProxy instance staying up.
+
+**Note (Phase 3 addendum):** this test predates Phase 3's VIP. As
+originally drafted, it documents the gap that Phase 3 was built to close.
+It's still worth running as-is against the individual node IPs first
+(to reconfirm the gap existed before Phase 3), and then repeating step 2
+against the VIP (`192.168.20.190`) instead of `192.168.20.177` directly,
+to confirm Phase 3 actually closes it.
+
+```bash
+sudo systemctl stop haproxy   # on jenkins, for example
+```
+
+Confirm the *other* node's HAProxy still routes correctly:
+```bash
+psql -h 192.168.20.180 -p 5000 -U postgres -c "SELECT pg_is_in_recovery();"
+```
+Expected: still works — because you connected to `192.168.20.180`
+specifically, not jenkins's now-dead HAProxy.
+
+Then confirm the gap this reveals (pre-Phase-3 behavior):
+```bash
+psql -h 192.168.20.177 -p 5000 -U postgres -c "SELECT pg_is_in_recovery();"
+```
+Expected: connection refused/times out — proving that without a VIP,
+losing one HAProxy instance means any client hardcoded to that specific IP
+loses access, even though the cluster itself is healthy. **This was the
+concrete justification for Phase 3's Keepalived work.**
+
+Then, with Phase 3 in place, repeat against the VIP instead:
+```bash
+psql -h 192.168.20.190 -p 5000 -U postgres -c "SELECT pg_is_in_recovery();"
+```
+Expected (post-Phase-3): still works, regardless of which underlying node
+is down, as long as the other node's HAProxy + Keepalived are healthy —
+this is the actual claim Phase 3 makes and should be confirmed here rather
+than assumed from Phase 3's own steady-state verification alone.
+
+Restart it:
+```bash
+sudo systemctl start haproxy
+```
+
+### Cleanup
+
+```bash
+psql -h 192.168.20.180 -p 5000 -U postgres -c "DROP TABLE IF EXISTS failover_test;"
+```
+
+Confirm final state matches a healthy baseline:
+```bash
+sudo patronictl -c /etc/patroni/patroni.yml list
+```
+
+### What to capture in the writeup
+
+- Actual switchover-to-HAProxy-reroute latency (measured, not assumed from
+  config)
+- Whether strict sync mode blocked writes post-switchover, and for how
+  long
+- Actual promotion latency in the unplanned-failure case
+- Confirmation that a downed HAProxy instance doesn't affect the other,
+  both pre- and post-Phase-3 (via individual IPs vs. via the VIP)
+- Any deviation from expected `patronictl list` role states at each step
 
 ## Known limitations (Phase 2)
 
-- **`replicas_async` pool is currently empty.** With only one replica (configured as the synchronous standby), there are no async replicas to route to. HAProxy logs `proxy 'replicas_async' has no server available!` at startup — this is expected given current topology, not a misconfiguration. Resolves naturally once the cluster scales to 3-4 replicas (see Phase 3 notes below).
-- **No single floating endpoint.** Clients must currently pick between `192.168.20.180` and `192.168.20.177` directly for HAProxy access — no VIP exists yet. Deferred to Phase 3 (Keepalived).
+- **`replicas_async` pool is currently empty.** With only one replica (configured as the synchronous standby), there are no async replicas to route to. HAProxy logs `proxy 'replicas_async' has no server available!` at startup — this is expected given current topology, not a misconfiguration. Resolves naturally once the cluster scales to 3-4 replicas (RnD-only exploration — see Phase 3's production-framing note).
+- **No single floating endpoint — resolved in Phase 3.** Clients previously had to pick between `192.168.20.180` and `192.168.20.177` directly. As of Phase 3, `192.168.20.190` (Keepalived VIP) provides a single stable endpoint. See Phase 3 below.
 - **Stats page has no access restriction.** Deliberate tradeoff — relies on local network trust rather than an IP allowlist. Not appropriate outside a trusted lab network.
 - **Co-located deployment (Option C).** HAProxy shares hosts with PostgreSQL/Patroni/etcd/Kubernetes. A production deployment would run load balancers on dedicated hosts, separate from both the database nodes and any deploy tooling.
 
@@ -737,9 +963,224 @@ If the second value is near the first, this confirms the theory, and the correct
 
 ---
 
-## Future Plans (Phase 3)
+## Future Plans (as of end of Phase 2)
 
-- Keepalived VIP for single-endpoint client routing (`cluster_vip`, already wired into `balancers.yml`, currently gated off)
-- Scale to 3-4 replicas with a 1-2 minimum synchronous replica requirement — will populate the currently-empty `replicas_async` pool and requires deciding `synchronous_node_count` explicitly (this is a ratio against healthy replicas, not a raw node count, and does not self-resolve just by adding nodes)
-- Swap disable on both hosts (kubeadm requirement, outstanding since Phase 1)
-- Execute the drafted failover test plan (`failover-tests-phase2.md`) to confirm HAProxy follows a live `patronictl switchover`, not just static role state
+- ~~Keepalived VIP for single-endpoint client routing~~ — **done, see Phase 3 below**
+- Scale to 3-4 replicas with a 1-2 minimum synchronous replica requirement — will populate the currently-empty `replicas_async` pool and requires deciding `synchronous_node_count` explicitly (this is a ratio against healthy replicas, not a raw node count, and does not self-resolve just by adding nodes). **RnD-only exploration — not the same as the 2-node production recommendation noted in Phase 3.**
+- ~~Swap disable on both hosts~~ — **done, see Phase 3 below**
+- Execute the drafted failover test plan above (still not yet executed as of Phase 3) to confirm HAProxy follows a live `patronictl switchover`, not just static role state — and, per the Phase 3 addendum to Test 3, to confirm the VIP actually closes the single-HAProxy-instance gap under a live failure, not just at steady state.
+
+---
+---
+
+# Phase 3 — Keepalived VIP for Single-Endpoint Client Routing
+
+**Keepalived** provides a single floating virtual IP (VIP) across the two
+HAProxy instances deployed in Phase 2, so clients connect to one stable
+address instead of choosing between the two nodes' real IPs directly.
+
+VIP: `192.168.20.190`
+Preferred node: `jenkins` (higher priority, preempt enabled — see below)
+
+**Production relevance note:** this VIP work is directly relevant to
+planned 2-node hospital-partner production deployments (one writer, one
+reader), not just an internal RnD exercise. The separate "scale to 3-4
+replicas" exploration noted in Phase 2's Future Plans is RnD-only and
+should not be conflated with the 2-node production recommendation.
+
+## Architecture decisions
+
+**Unicast, not multicast VRRP.** This is a Proxmox-managed hypervisor
+network; multicast VRRP is unreliable on virtualized/hypervisor networks
+due to switch/vswitch multicast snooping issues, risking a split-brain VIP
+if advertisements silently fail to propagate. Configured with explicit
+`unicast_src_ip` / `unicast_peer` per node instead of the default
+multicast group.
+
+**Preempt, not nopreempt.** jenkins (priority 150) reclaims the VIP
+automatically when it recovers after a failover to srv-deploy-eng
+(priority 100). Deliberate tradeoff: this causes a brief *second*
+failover event on jenkins' recovery (traffic moves back from
+srv-deploy-eng to jenkins) rather than leaving the VIP wherever it landed
+until that node also fails. Chosen for predictability — the VIP's
+location always reflects the preferred node's health rather than failover
+history.
+
+**Failover trigger is HAProxy health, not Patroni role.** The
+`chk_haproxy` vrrp_script checks local HAProxy's systemd status and stats
+port reachability — it does not check Patroni's primary/replica state.
+HAProxy already abstracts Patroni role away (routing writes to whichever
+node is primary via its own health checks), so the VIP only needs to
+track "is there a healthy HAProxy to route through here."
+
+## Swap disable and overcommit override
+
+kubeadm requires swap disabled on all nodes — flagged as outstanding since
+Phase 1. Resolved on both hosts during Phase 3 work.
+
+**srv-deploy-eng:** required overriding Autobase's own
+`vm.overcommit_memory=2` (set in `/etc/sysctl.d/autobase.sysctl.conf`) via
+a new `/etc/sysctl.d/zz-local-overrides.conf` setting
+`vm.overcommit_memory=1`. Filename prefix matters — `sysctl.d` loads in
+strict lexical order, and `zz-` must sort after `autobase.sysctl.conf`
+(starts with `a`) to actually take effect; a first attempt using `99-`
+failed silently because digits sort before letters in ASCII.
+
+**Live incident during this fix (srv-deploy-eng):** strict overcommit +
+no swap left insufficient headroom, causing `sshd` to fail forking new
+connections (`error: fork: Cannot allocate memory`) and reject all new SSH
+sessions instantly. No processes were OOM-killed (confirmed via
+`dmesg`/`journalctl` — `sshd` just couldn't fork, wasn't killed by the
+kernel), and Patroni/PostgreSQL were unaffected throughout (confirmed
+healthy via `patronictl list`, zero replication lag, the entire time).
+Recovered via the Proxmox console (out-of-band, bypasses SSH/network
+entirely) — log in as the regular OS user, not `ansible_svc` (password
+login is deliberately locked on that account).
+
+**Contributing factor:** `netdata` and a long-unhealthy `cadvisor` Docker
+container were consuming ~1.1GB of real committed memory on
+srv-deploy-eng — well beyond the "negligible cost" assumption noted in
+Phase 1's `group_vars/all.yml` comment (since corrected there). Stopping
+these before running `swapoff` avoided repeating the crisis.
+
+**jenkins:** swap disabled (fstab entry commented out) and confirmed via
+`swapon --show` returning empty. Given jenkins' larger RAM allocation
+(11.68GB vs. srv-deploy-eng's 7.75GB), the same overcommit override was
+not required there, but headroom (`Committed_AS` vs `CommitLimit` in
+`/proc/meminfo`) should still be periodically confirmed rather than
+assumed safe indefinitely.
+
+**Recommendation for repeating this elsewhere:** check for and stop any
+`netdata`/unhealthy `cadvisor` containers, and check `Committed_AS` vs
+`CommitLimit` headroom, *before* running `swapoff -a` — not after.
+
+**Longer-term consideration (not yet done):** increasing srv-deploy-eng's
+RAM allocation in Proxmox (7.8GB is tight for co-hosting K8s control plane
++ Patroni + PostgreSQL + Docker-tooling simultaneously) would allow strict
+overcommit (`2`) to be restored safely, rather than relying on the
+heuristic-overcommit (`1`) workaround — which trades "safe allocation
+refusal" for "OOM-kill risk under real load" on a control-plane node.
+
+## Known issues / non-obvious dependencies
+
+**HAProxy `bind_address` had to be patched separately from Postgres.**
+`bind_address` is pinned per-node in `inventory` (e.g. `192.168.20.180`)
+to resolve Flannel CNI virtual interface auto-detection breaking
+Postgres/Patroni TLS SANs and `pg_hba.conf` rules (see Phase 1). Autobase's
+HAProxy role reuses that same variable for every `bind` line in
+`haproxy.cfg` — but HAProxy has no TLS-SAN or `pg_hba` identity concern
+the way Postgres does. Pinning HAProxy to a single real IP silently broke
+VIP-routed traffic: packets addressed to the VIP never matched a socket
+bound only to the node's own address, so the VIP could move correctly
+between nodes while nothing was actually listening on it.
+
+Fixed via a new role, `roles/haproxy_vip_bind/`, run as a separate
+post-deploy playbook (`haproxy-vip-bind.yml`) that rewrites all five
+HAProxy listener binds (`stats`, `master`, `replicas`, `replicas_sync`,
+`replicas_async`) from `bind_address` to `0.0.0.0`, validated against
+HAProxy's own config checker before the file is overwritten.
+
+**CRITICAL — not set-and-forget.** Any future re-run of the Autobase
+playbook (`autobase/automation:2.8.0`) re-renders `haproxy.cfg` from its
+own internal template using the pinned `bind_address` again, silently
+reverting this patch with no warning. `haproxy-vip-bind.yml` MUST be
+re-run after any Autobase playbook run that touches HAProxy config. Not
+currently automated/chained — a manual step.
+
+**`host_vars/` files are named by inventory IP, not hostname.** Ansible's
+`host_vars/<name>.yml` auto-load only matches the literal inventory host
+identifier — in this project's `inventory`, that's the IP
+(`192.168.20.177`, `192.168.20.180`), not the `hostname=` custom variable
+set alongside it. Files must be named `host_vars/192.168.20.177.yml` and
+`host_vars/192.168.20.180.yml`, not `host_vars/jenkins.yml` /
+`host_vars/srv-deploy-eng.yml` — the latter silently fails to load with
+no error, leaving all `keepalived_*` variables undefined.
+
+**Native (non-Docker) `ansible-playbook` runs require SSH keys symlinked
+into `/root/.ssh/`.** `inventory` hardcodes
+`ansible_ssh_private_key_file=/root/.ssh/ansible_<node>_key` for both
+hosts. Phase 1/2 only ever worked because the `autobase/automation:2.8.0`
+Docker wrapper mounts the real keys (which live under
+`/home/srv-deploy-eng/.ssh/`) into the container's `/root/.ssh/`
+automatically. Native playbook runs — required for `keepalived.yml` and
+`haproxy-vip-bind.yml`, since neither is part of the Autobase image —
+need the real keys symlinked manually:
+
+```bash
+sudo mkdir -p /root/.ssh
+sudo ln -s /home/srv-deploy-eng/.ssh/ansible_srv_deploy_eng_key /root/.ssh/ansible_srv_deploy_eng_key
+sudo ln -s /home/srv-deploy-eng/.ssh/ansible_jenkins_key /root/.ssh/ansible_jenkins_key
+sudo chmod 700 /root/.ssh
+```
+
+**Kubernetes RBAC — `system:node` ClusterRoleBinding found with no
+subjects.** Unrelated to Keepalived itself, but discovered and fixed
+during Phase 3 work: jenkins was missing from `kubectl get nodes` despite
+a healthy, correctly-authenticating kubelet. Root cause: the
+`system:node` ClusterRoleBinding had no subjects bound (should bind the
+`system:nodes` group) — the same failure class as an earlier
+`kubeadm:cluster-admins` binding issue. Without a subject, no node can
+self-register or update status via that binding. Fixed via:
+
+```bash
+kubectl patch clusterrolebinding system:node --type='json' \
+  -p='[{"op":"add","path":"/subjects","value":[{"kind":"Group","name":"system:nodes","apiGroup":"rbac.authorization.k8s.io"}]}]'
+```
+
+Root cause of why either binding lost its subjects was not determined for
+either occurrence — worth a postmortem note if it recurs a third time.
+Confirmed via `kubectl get clusterrolebinding -o custom-columns=...` that
+no other bindings are currently in the same empty-subjects state.
+
+## Deployment
+
+Two separate playbooks, run natively (not through the Docker wrapper —
+neither role is part of the pinned Autobase image):
+
+```bash
+sudo ansible-playbook keepalived.yml -i inventory
+sudo ansible-playbook haproxy-vip-bind.yml -i inventory
+```
+
+Recommended: dry-run first with `--check --diff` for both.
+
+## Verification (confirmed working)
+
+- `chk_haproxy` succeeds on both nodes (checked against `bind_address`,
+  not `127.0.0.1` — HAProxy does not bind to loopback)
+- VIP correctly held by jenkins at rest (`ip addr show ens18` shows
+  `192.168.20.190` as a secondary address); correctly migrated to
+  srv-deploy-eng when jenkins' keepalived service was stopped and back to
+  jenkins on restart (preempt)
+- `keepalived` starts cleanly on both nodes with no `Unknown keyword` or
+  `SECURITY VIOLATION` warnings (`enable_script_security` set correctly
+  in `global_defs`)
+- All five HAProxy listeners reachable through the VIP:
+  - `stats` (`curl` → `200`)
+  - `replicas` / `replicas_sync` / `replicas_async` (`nc -zv` TCP connect
+    succeeds on all three)
+  - `master` — end-to-end proof via `psql -h 192.168.20.190 -p 5000 -U
+    postgres -d postgres -c "SELECT pg_is_in_recovery();"` returning `f`,
+    confirming write traffic actually reaches the current primary through
+    the VIP, not just that the port is open
+
+## Not yet tested
+
+- Actual failover behavior under a live HAProxy or Postgres node failure
+  induced deliberately (VIP migration has only been confirmed via
+  stopping/restarting the keepalived service directly, not via a full
+  simulated node failure)
+- Interaction with the Phase 2 failover test plan (above) — Test 3's
+  Phase 3 addendum (repeating the HAProxy-instance-down scenario against
+  the VIP) has not yet been executed
+- Behavior during a live `patronictl switchover` combined with VIP
+  routing simultaneously
+
+## On the horizon
+
+- Execute the Phase 2 failover test plan in full, including the Phase 3
+  addendum to Test 3
+- Confirm/repeat srv-deploy-eng's overcommit headroom check on jenkins
+  periodically rather than treating it as permanently settled
+- Consider increasing srv-deploy-eng's Proxmox RAM allocation to restore
+  strict overcommit (`vm.overcommit_memory=2`) safely
