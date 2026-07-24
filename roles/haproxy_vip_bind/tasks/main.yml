@@ -1,0 +1,51 @@
+---
+# Post-deploy patch: widens HAProxy's listener binds from the pinned
+# per-node bind_address (e.g. 192.168.20.180) to 0.0.0.0 (all interfaces).
+#
+# WHY THIS EXISTS:
+# bind_address is pinned in inventory to resolve Flannel CNI virtual
+# interface auto-detection picking the wrong address for Postgres/Patroni
+# TLS SANs and pg_hba.conf rules (see Phase 1 notes). Autobase's HAProxy
+# role reuses that same variable for every `bind` line in haproxy.cfg —
+# but HAProxy has no TLS-SAN or pg_hba identity concern the way Postgres
+# does. A load balancer needs to accept connections from wherever clients
+# reach it, including via the Keepalived VIP (192.168.20.190), which is
+# not bound to any single node's real interface. Pinning HAProxy to a
+# single real IP silently breaks VIP-routed traffic: packets addressed to
+# the VIP never match a socket bound only to the node's own address, so
+# they're dropped even while the VIP itself moves correctly between nodes.
+#
+# SCOPE: widens all five listeners (stats, master, replicas,
+# replicas_sync, replicas_async) — Phase 3's goal is a single client
+# endpoint for read/write traffic, not just a working stats page.
+#
+# CRITICAL — NOT SET-AND-FORGET:
+# Any future re-run of the Autobase playbook (autobase/automation:2.8.0)
+# re-renders haproxy.cfg from its own internal template using the pinned
+# bind_address again, silently reverting this patch with no warning.
+# This role MUST be re-run after any Autobase playbook run that touches
+# HAProxy config. Not currently automated/chained — a manual step for now.
+
+- name: Verify haproxy.cfg exists before attempting to patch it
+  stat:
+    path: /etc/haproxy/haproxy.cfg
+  register: haproxy_cfg_stat
+
+- name: Fail early if haproxy.cfg is missing (Phase 2 not deployed yet)
+  fail:
+    msg: >
+      /etc/haproxy/haproxy.cfg not found on this host. This role assumes
+      Phase 2 (Autobase HAProxy role) has already deployed and rendered
+      the config. Run the Autobase playbook first.
+  when: not haproxy_cfg_stat.stat.exists
+
+- name: Widen all HAProxy listener binds from bind_address to 0.0.0.0
+  replace:
+    path: /etc/haproxy/haproxy.cfg
+    regexp: 'bind {{ bind_address }}:'
+    replace: 'bind 0.0.0.0:'
+    # Validates the edited file with HAProxy's own config checker before
+    # it's allowed to overwrite the real file — catches a bad regex
+    # match or unexpected format instead of shipping a broken config.
+    validate: '/usr/sbin/haproxy -c -f %s'
+  notify: reload haproxy

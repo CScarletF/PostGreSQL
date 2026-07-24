@@ -1,0 +1,8 @@
+---
+- name: reload haproxy
+  # reload (not restart): re-reads config on a running HAProxy process
+  # without dropping active connections — safe to run against a live
+  # cluster mid-traffic.
+  systemd:
+    name: haproxy
+    state: reloaded

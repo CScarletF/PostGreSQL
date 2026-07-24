@@ -1,0 +1,6 @@
+---
+- name: Widen HAProxy binds for VIP routing (post-deploy patch)
+  hosts: balancers
+  become: true
+  roles:
+    - haproxy_vip_bind

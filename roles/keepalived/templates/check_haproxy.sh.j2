@@ -1,0 +1,15 @@
+#!/bin/bash
+# Checks HAProxy process + stats port responsiveness.
+# Deliberately does NOT check Patroni role — HAProxy abstracts that away.
+# Uses bind_address (not 127.0.0.1) — HAProxy binds only to the node's
+# real LAN IP per Phase 2's Flannel CNI auto-detection workaround.
+
+if ! systemctl is-active --quiet haproxy; then
+    exit 1
+fi
+
+if ! curl -s -o /dev/null --max-time 2 http://{{ bind_address }}:{{ haproxy_listen_port.stats }}; then
+    exit 1
+fi
+
+exit 0

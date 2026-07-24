@@ -115,6 +115,12 @@ pgbouncer_install: false
 
 # --- Monitoring (installed by default, left as-is) ---
 # netdata_install: true  # (default) lightweight monitoring dashboard,
-#   reachable at http://<node>:19999 after deploy. Left at default since
-#   it's useful for observing the cluster during failover tests, at
-#   negligible resource cost on this VM.
+#   reachable at http://<node>:19999 after deploy. NOTE: NOT negligible —
+#   confirmed ~1.1GB real committed memory on srv-deploy-eng under strict
+#   overcommit (vm.overcommit_memory=2), contributing to an sshd fork
+#   failure during swap-disable work. Check headroom before assuming
+#   this is free.
+
+# --- VIP (Phase 3: Keepalived) ---
+keepalived_vip: 192.168.20.190
+keepalived_interface: ens18

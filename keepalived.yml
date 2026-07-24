@@ -1,0 +1,6 @@
+---
+- name: Deploy Keepalived VIP
+  hosts: balancers
+  become: true
+  roles:
+    - keepalived

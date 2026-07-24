@@ -1,0 +1,32 @@
+---
+- name: Install keepalived and curl
+  apt:
+    name:
+      - keepalived
+      - curl
+    state: present
+    update_cache: true
+
+- name: Deploy HAProxy health check script
+  template:
+    src: check_haproxy.sh.j2
+    dest: /etc/keepalived/check_haproxy.sh
+    owner: root
+    group: root
+    mode: '0755'
+  notify: restart keepalived
+
+- name: Deploy keepalived.conf
+  template:
+    src: keepalived.conf.j2
+    dest: /etc/keepalived/keepalived.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart keepalived
+
+- name: Enable and start keepalived
+  systemd:
+    name: keepalived
+    enabled: true
+    state: started
