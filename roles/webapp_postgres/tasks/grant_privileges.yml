@@ -1,0 +1,41 @@
+---
+- name: Grant table privileges to the application role
+  community.postgresql.postgresql_privs:
+    db: "{{ webapp_postgres_db_name }}"
+    login_host: "{{ webapp_postgres_vip }}"
+    login_port: "{{ webapp_postgres_vip_port }}"
+    login_user: "{{ webapp_postgres_superuser_user }}"
+    login_password: "{{ webapp_postgres_superuser_password }}"
+    role: "{{ webapp_postgres_app_user }}"
+    type: table
+    objs: "{{ webapp_postgres_table_name }}"
+    privs: SELECT,INSERT,UPDATE,DELETE
+
+# Easy to miss: the table's `id serial` column relies on a sequence
+# (equipment_id_seq) that's a SEPARATE object from the table itself.
+# Without USAGE on it, INSERT succeeds on the table grant check but then
+# fails at the DB level with "permission denied for sequence" the moment
+# a row without an explicit id is inserted -- which is every insert this
+# app ever makes, since id is auto-generated.
+- name: Grant sequence usage for the id column
+  community.postgresql.postgresql_privs:
+    db: "{{ webapp_postgres_db_name }}"
+    login_host: "{{ webapp_postgres_vip }}"
+    login_port: "{{ webapp_postgres_vip_port }}"
+    login_user: "{{ webapp_postgres_superuser_user }}"
+    login_password: "{{ webapp_postgres_superuser_password }}"
+    role: "{{ webapp_postgres_app_user }}"
+    type: sequence
+    objs: "{{ webapp_postgres_table_name }}_id_seq"
+    privs: USAGE,SELECT
+
+- name: Grant pg_monitor membership (for dashboard replication-status queries)
+  community.postgresql.postgresql_membership:
+    db: "{{ webapp_postgres_db_name }}"
+    login_host: "{{ webapp_postgres_vip }}"
+    login_port: "{{ webapp_postgres_vip_port }}"
+    login_user: "{{ webapp_postgres_superuser_user }}"
+    login_password: "{{ webapp_postgres_superuser_password }}"
+    group: pg_monitor
+    target_roles: "{{ webapp_postgres_app_user }}"
+    state: present

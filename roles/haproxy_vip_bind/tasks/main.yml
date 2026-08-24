@@ -20,11 +20,15 @@
 # endpoint for read/write traffic, not just a working stats page.
 #
 # CRITICAL — NOT SET-AND-FORGET:
-# Any future re-run of the Autobase playbook (autobase/automation:2.8.0)
-# re-renders haproxy.cfg from its own internal template using the pinned
-# bind_address again, silently reverting this patch with no warning.
-# This role MUST be re-run after any Autobase playbook run that touches
-# HAProxy config. Not currently automated/chained — a manual step for now.
+# Originally believed this only reverted on an Autobase playbook re-run.
+# Root-caused 2026-08-21: confd re-renders haproxy.cfg from
+# /etc/confd/templates/haproxy.tmpl on ANY etcd-observed topology change
+# (leader renewal, replica reconnect), not on a fixed schedule and not
+# only on Autobase re-runs. This role now patches BOTH the rendered
+# haproxy.cfg AND the confd template it's regenerated from, so the fix
+# should hold across confd's normal re-renders going forward. Still
+# worth re-running this role after any full Autobase redeploy, since a
+# clean deploy would re-ship the original (unpatched) template.
 
 - name: Verify haproxy.cfg exists before attempting to patch it
   stat:
@@ -49,3 +53,30 @@
     # match or unexpected format instead of shipping a broken config.
     validate: '/usr/sbin/haproxy -c -f %s'
   notify: reload haproxy
+
+- name: Verify confd's haproxy template exists before attempting to patch it
+  stat:
+    path: /etc/confd/templates/haproxy.tmpl
+  register: confd_haproxy_tmpl_stat
+
+# WHY THIS SECOND PATCH IS NEEDED (found the hard way, 2026-08-21):
+# haproxy.cfg above isn't actually the root of the problem -- it's
+# confd that owns it. confd watches etcd for cluster topology changes
+# and re-renders haproxy.cfg from THIS template on every change (leader
+# renewal, replica reconnect, etc.) -- not on a fixed schedule, and not
+# only on an Autobase re-run as originally assumed. The template itself
+# ships with the node's own IP already hardcoded into every `bind` line
+# (not a confd {{ }} variable), so every re-render reverts the widened
+# bind regardless of how many times haproxy.cfg itself is patched
+# directly. This is the actual fix; the haproxy.cfg patch above is now
+# effectively redundant once this holds, but left in place since it's
+# harmless and covers the moment right after a fresh Autobase deploy,
+# before confd's first re-render.
+- name: Widen all binds in confd's haproxy template from node IP to 0.0.0.0
+  replace:
+    path: /etc/confd/templates/haproxy.tmpl
+    regexp: 'bind (\d{1,3}\.){3}\d{1,3}:'
+    replace: 'bind 0.0.0.0:'
+    validate: '/usr/sbin/haproxy -c -f %s'
+  when: confd_haproxy_tmpl_stat.stat.exists
+  notify: restart confd

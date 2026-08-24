@@ -6,3 +6,12 @@
   systemd:
     name: haproxy
     state: reloaded
+
+- name: restart confd
+  # confd has no equivalent to haproxy's graceful reload -- restart is
+  # the standard way to force it to pick up a changed template
+  # immediately rather than waiting for its next topology-triggered
+  # re-render.
+  systemd:
+    name: confd
+    state: restarted

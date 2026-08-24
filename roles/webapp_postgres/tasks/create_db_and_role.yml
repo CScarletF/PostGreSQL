@@ -1,0 +1,20 @@
+---
+- name: Create application database
+  community.postgresql.postgresql_db:
+    name: "{{ webapp_postgres_db_name }}"
+    login_host: "{{ webapp_postgres_vip }}"
+    login_port: "{{ webapp_postgres_vip_port }}"
+    login_user: "{{ webapp_postgres_superuser_user }}"
+    login_password: "{{ webapp_postgres_superuser_password }}"
+
+- name: Create scoped, non-superuser application role
+  community.postgresql.postgresql_user:
+    name: "{{ webapp_postgres_app_user }}"
+    password: "{{ webapp_postgres_app_password }}"
+    db: "{{ webapp_postgres_db_name }}"
+    role_attr_flags: NOSUPERUSER,NOCREATEDB,NOCREATEROLE
+    login_host: "{{ webapp_postgres_vip }}"
+    login_port: "{{ webapp_postgres_vip_port }}"
+    login_user: "{{ webapp_postgres_superuser_user }}"
+    login_password: "{{ webapp_postgres_superuser_password }}"
+  no_log: true

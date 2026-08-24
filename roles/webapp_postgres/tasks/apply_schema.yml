@@ -1,0 +1,28 @@
+---
+- name: Check whether the equipment table already exists
+  community.postgresql.postgresql_query:
+    db: "{{ webapp_postgres_db_name }}"
+    login_host: "{{ webapp_postgres_vip }}"
+    login_port: "{{ webapp_postgres_vip_port }}"
+    login_user: "{{ webapp_postgres_superuser_user }}"
+    login_password: "{{ webapp_postgres_superuser_password }}"
+    query: >-
+      SELECT 1 FROM information_schema.tables
+      WHERE table_name = %(table_name)s
+    named_args:
+      table_name: "{{ webapp_postgres_table_name }}"
+  register: webapp_postgres_table_check
+
+# schema.sql (embedded in this role's files/) has no IF NOT EXISTS on
+# CREATE TABLE or CREATE TRIGGER, matching the framework repo's version
+# exactly -- so this task only ever runs once. Re-running the playbook
+# after the table exists is a no-op here, not an error.
+- name: Apply equipment_schema.sql (table + updated_at trigger)
+  community.postgresql.postgresql_query:
+    db: "{{ webapp_postgres_db_name }}"
+    login_host: "{{ webapp_postgres_vip }}"
+    login_port: "{{ webapp_postgres_vip_port }}"
+    login_user: "{{ webapp_postgres_superuser_user }}"
+    login_password: "{{ webapp_postgres_superuser_password }}"
+    query: "{{ lookup('file', role_path + '/files/equipment_schema.sql') }}"
+  when: webapp_postgres_table_check.rowcount == 0

@@ -1,0 +1,24 @@
+---
+# Non-secret configuration for provisioning webapp_demo. Secrets
+# (superuser password, generated app password) are NOT here -- see
+# webapp_postgres_secrets.yml.example at the repo root.
+
+# Connect through the Keepalived VIP's HAProxy "master" listener, same
+# as the app's own .env DB_HOST/DB_PORT -- this always routes to
+# whichever node is currently Patroni primary, so this role never needs
+# to know or care which physical node that is.
+webapp_postgres_vip: "192.168.20.190"
+webapp_postgres_vip_port: 5000
+
+webapp_postgres_superuser_user: postgres
+
+webapp_postgres_db_name: webapp_demo
+webapp_postgres_app_user: webapp_app
+webapp_postgres_table_name: equipment
+
+# Where the generated (not hand-chosen) webapp_app password gets cached
+# on the control node. Ansible's password lookup both generates AND
+# reads from this file, so re-running the playbook reuses the same
+# password rather than rotating it every run. Gitignored -- see the
+# .gitignore note in this role's README.
+webapp_postgres_app_password_file: "{{ playbook_dir }}/.secrets/webapp_app_password.txt"

@@ -1,0 +1,25 @@
+---
+# webapp_postgres.yml
+#
+# Provisions webapp_demo, the scoped webapp_app role, and the equipment
+# schema for app-framework-v1. Run with native ansible-playbook, NOT the
+# Docker-wrapped Autobase image -- this role isn't Autobase-provided.
+#
+# Runs against localhost/the control node itself, not a cluster host:
+# all tasks connect OUT to Postgres via the Keepalived VIP, so there's
+# no need to target a specific Patroni node (or know which one is
+# currently primary) -- the VIP already resolves that.
+#
+# Usage:
+#   ansible-playbook webapp_postgres.yml -e @webapp_postgres_secrets.yml
+#
+# webapp_postgres_secrets.yml (gitignored) must define:
+#   webapp_postgres_superuser_password: "<the postgres superuser password from patroni.yml>"
+# See webapp_postgres_secrets.yml.example for the template.
+
+- name: Provision webapp_demo database and equipment schema
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - webapp_postgres

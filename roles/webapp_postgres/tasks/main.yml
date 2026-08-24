@@ -1,0 +1,16 @@
+---
+- name: Generate (or reuse) webapp_app password
+  ansible.builtin.set_fact:
+    webapp_postgres_app_password: >-
+      {{ lookup('password', webapp_postgres_app_password_file + ' length=32 chars=ascii_letters,digits') }}
+  no_log: true
+
+- name: Create database and scoped application role
+  ansible.builtin.import_tasks: create_db_and_role.yml
+
+- name: Apply equipment schema
+  ansible.builtin.import_tasks: apply_schema.yml
+
+- name: Grant application role its scoped privileges
+  ansible.builtin.import_tasks: grant_privileges.yml
+
