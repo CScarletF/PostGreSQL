@@ -8,9 +8,34 @@
 - name: Create database and scoped application role
   ansible.builtin.import_tasks: create_db_and_role.yml
 
-- name: Apply equipment schema
-  ansible.builtin.import_tasks: apply_schema.yml
+- name: Discover every module with a schema.sql
+  ansible.builtin.find:
+    paths: "{{ webapp_postgres_modules_dir }}"
+    patterns: "schema.sql"
+    recurse: true
+  register: webapp_postgres_schema_files
 
-- name: Grant application role its scoped privileges
-  ansible.builtin.import_tasks: grant_privileges.yml
+# include_tasks (not import_tasks) -- needed so `loop` actually
+# re-evaluates this file's tasks once per discovered module, rather
+# than being parsed once at playbook-parse time the way import_tasks
+# is. _template is excluded the same way app.py/scaffold.py exclude
+# it: by folder name, not by a maintained list.
+- name: Apply schema and grant privileges for each discovered module
+  ansible.builtin.include_tasks: apply_and_grant_module.yml
+  loop: "{{ webapp_postgres_schema_files.files | map(attribute='path') | list }}"
+  loop_control:
+    loop_var: webapp_postgres_schema_path
+  when: (webapp_postgres_schema_path | dirname | basename) != '_template'
 
+# Role membership, not table-scoped -- granted once per role run, not
+# once per module.
+- name: Grant pg_monitor membership (for dashboard replication-status queries)
+  community.postgresql.postgresql_membership:
+    db: "{{ webapp_postgres_db_name }}"
+    login_host: "{{ webapp_postgres_vip }}"
+    login_port: "{{ webapp_postgres_vip_port }}"
+    login_user: "{{ webapp_postgres_superuser_user }}"
+    login_password: "{{ webapp_postgres_superuser_password }}"
+    group: pg_monitor
+    target_roles: "{{ webapp_postgres_app_user }}"
+    state: present

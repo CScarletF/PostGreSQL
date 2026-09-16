@@ -4,7 +4,7 @@
 
 This project was initiated as an RnD task: evaluate multi-server PostgreSQL setups for a team whose mandate is maximum capability at minimum cost and complexity, using free and open-source tooling. The deliverable is a reproducible, documented proof-of-concept demonstrating automated failover and synchronous replication.
 
-**Phase 1** (below) covers automated failover and synchronous replication. **Phase 2** (further below) covers HAProxy read/write load balancing — a self-directed extension beyond the original assignment scope, documented separately for portfolio purposes. **Phase 3** covers a Keepalived VIP for single-endpoint client routing.
+**Phase 1** (below) covers automated failover and synchronous replication. **Phase 2** (further below) covers HAProxy read/write load balancing — a self-directed extension beyond the original assignment scope, documented separately for portfolio purposes. **Phase 3** covers a Keepalived VIP for single-endpoint client routing, plus a later addendum generalizing the `webapp_postgres` provisioning role.
 
 ---
 ---
@@ -1102,9 +1102,9 @@ into `/root/.ssh/`.** `inventory` hardcodes
 hosts. Phase 1/2 only ever worked because the `autobase/automation:2.8.0`
 Docker wrapper mounts the real keys (which live under
 `/home/srv-deploy-eng/.ssh/`) into the container's `/root/.ssh/`
-automatically. Native playbook runs — required for `keepalived.yml` and
-`haproxy-vip-bind.yml`, since neither is part of the Autobase image —
-need the real keys symlinked manually:
+automatically. Native playbook runs — required for `keepalived.yml`,
+`haproxy-vip-bind.yml`, and (as of the addendum below) `webapp_postgres.yml`
+— need the real keys symlinked manually:
 
 ```bash
 sudo mkdir -p /root/.ssh
@@ -1112,6 +1112,13 @@ sudo ln -s /home/srv-deploy-eng/.ssh/ansible_srv_deploy_eng_key /root/.ssh/ansib
 sudo ln -s /home/srv-deploy-eng/.ssh/ansible_jenkins_key /root/.ssh/ansible_jenkins_key
 sudo chmod 700 /root/.ssh
 ```
+
+Because `/root/.ssh/` is only readable by root, `ansible-playbook` must
+also be invoked with `sudo` for any play that connects over SSH using
+these keys — running as a non-root user gets a misleading `no such
+identity: ... Permission denied` even though the symlink and target both
+exist and are correctly named. See the addendum below for where this bit
+in practice.
 
 **Kubernetes RBAC — `system:node` ClusterRoleBinding found with no
 subjects.** Unrelated to Keepalived itself, but discovered and fixed
@@ -1184,3 +1191,115 @@ Recommended: dry-run first with `--check --diff` for both.
   periodically rather than treating it as permanently settled
 - Consider increasing srv-deploy-eng's Proxmox RAM allocation to restore
   strict overcommit (`vm.overcommit_memory=2`) safely
+
+---
+---
+
+# Phase 3 addendum — Generalizing `webapp_postgres` for multi-module apps
+
+## Origin
+
+`webapp_postgres` was originally written for a single consumer: the
+`app-framework` repo's `equipment` module, and only ever provisioned one
+hardcoded table (`webapp_postgres_table_name: equipment`). As
+app-framework grew a second consumer app (a store PoS build on the same
+framework) with its own modules (`product`, `sale`, `sale_item`, plus
+`assignment` from the original app), every new module required manually
+repeating the same three steps by hand: apply that module's `schema.sql`
+as the Postgres superuser, `GRANT` `webapp_app` scoped privileges on the
+new table, `GRANT USAGE` on its `id` sequence. This toil scales linearly
+with module count and was flagged as worth fixing once the second/third
+manual round confirmed the pattern.
+
+## What changed
+
+`webapp_postgres_table_name` (a single hardcoded table name) is gone.
+The role now discovers **every** `modules/<name>/schema.sql` under a
+configured `webapp_postgres_modules_dir`, the same directory-scan
+principle app-framework's own `app.py` and `setup.py` already use for
+backend registration and schema sync — adding a module to the app
+requires no change to this role, the same way it requires no change to
+`app.py`.
+
+For each discovered module (skipping `_template`, matched by folder name
+the same way `app.py`/`scaffold.py` skip it):
+1. Read the table name out of that module's `table.json` (not
+   hand-repeated in Ansible — `table.json` is already the single source
+   of truth for that value, per app-framework's own README).
+2. Apply `schema.sql` only if the table doesn't already exist (same
+   idempotency guarantee the original single-table version had).
+3. `GRANT SELECT, INSERT, UPDATE, DELETE` to `webapp_app` on the table.
+4. `GRANT USAGE, SELECT` to `webapp_app` on `<table>_id_seq`.
+
+`webapp_postgres.yml`'s `hosts:`/`connection:` also changed, and this is
+the part most likely to trip up a future re-run — see below.
+
+## Why the play now targets `jenkins` over SSH instead of `localhost`
+
+The original role assumed the Ansible control node and the app-framework
+checkout (`modules/`) lived on the same machine — true for the
+single-table `equipment` case, since `webapp_postgres.yml` originally ran
+with `hosts: localhost, connection: local`. That assumption doesn't hold
+here: the Ansible control node is `srv-deploy-eng`, but the app-framework
+checkout (and the running app itself) is on `jenkins`, per `inventory`.
+`hosts: localhost` always meant "wherever `ansible-playbook` is invoked
+from," which is `srv-deploy-eng` — not where `modules/` lives.
+
+Fixed by pointing `webapp_postgres.yml` at `jenkins` (`192.168.20.177`)
+directly, matching how `host_vars/` files are already keyed by IP rather
+than hostname elsewhere in this project (see the `host_vars/` note
+above). This has one real consequence: `ansible.builtin.find` (module,
+runs on the target host) was already fine, but the two `table.json`/
+`schema.sql` file reads had to change from `lookup('file', ...)` to
+`slurp` + `b64decode` — `lookup()` plugins always execute on the
+controller regardless of a play's `hosts:`, so they silently read from
+the wrong machine once the target stopped being `localhost`. `slurp` is
+a proper module and runs on whichever host the play targets, which is
+what's actually needed here.
+
+## Prerequisites (in addition to Phase 1's `ansible_svc`/SSH-key setup)
+
+- **`python3-psycopg2` on `jenkins`.** The `community.postgresql.*`
+  tasks now execute on `jenkins`, not the controller, so the Python
+  driver needs to be installed there:
+  ```bash
+  ssh -i ~/.ssh/ansible_jenkins_key ansible_svc@192.168.20.177 \
+    "python3 -c 'import psycopg2' || sudo apt-get install -y python3-psycopg2"
+  ```
+- **`ansible_jenkins_key` symlinked into `/root/.ssh/`** — same
+  requirement as `keepalived.yml`/`haproxy-vip-bind.yml`, see the
+  Phase 3 known-issues note above. If already done for those two
+  playbooks, no further action needed.
+- **Run with `sudo`.** Because the symlinked key lives under
+  `/root/.ssh/`, invoking `ansible-playbook` as a non-root user fails
+  with a misleading `no such identity: ... Permission denied` even
+  though the key exists and is correctly symlinked — the error is a
+  read-permission problem on `/root/.ssh/`, not a missing-file problem.
+  Always run this playbook (and the other two native playbooks) with
+  `sudo`.
+
+## Running it
+
+```bash
+sudo ansible-playbook webapp_postgres.yml -i inventory -e @webapp_postgres_secrets.yml
+```
+
+Re-running after every table already exists is a safe no-op — expect
+`changed=0` across every module's grant/apply tasks, since the grants
+themselves are idempotent and the schema-apply step only fires when a
+table is genuinely absent. This was confirmed directly: after manually
+applying `product`/`sale`/`sale_item` by hand (before this addendum
+existed) and then running the generalized role, the result was
+`changed=0` for all five modules (`equipment`, `assignment`, `product`,
+`sale`, `sale_item`), proving the automated path reproduces the same end
+state the manual `psql -f` + `GRANT` steps had already produced.
+
+## What this doesn't cover
+
+Generating `table_core.py` (app-framework's `sync_tables.py
+--module=<name>`) is still a separate step, run against the app's Docker
+container — that was never part of this role even for the original
+single-table `equipment` case, so it's an unchanged gap, not a new one
+introduced by this addendum. A new module still needs both: this role
+for schema + grants, and `sync_tables.py` (directly, or via
+app-framework's own `setup.py`) for the generated Python table object.

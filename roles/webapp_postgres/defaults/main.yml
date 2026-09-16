@@ -14,11 +14,17 @@ webapp_postgres_superuser_user: postgres
 
 webapp_postgres_db_name: webapp_demo
 webapp_postgres_app_user: webapp_app
-webapp_postgres_table_name: equipment
 
-# Where the generated (not hand-chosen) webapp_app password gets cached
-# on the control node. Ansible's password lookup both generates AND
-# reads from this file, so re-running the playbook reuses the same
-# password rather than rotating it every run. Gitignored -- see the
-# .gitignore note in this role's README.
+# Every module folder under here with a schema.sql gets its schema
+# applied (if the table doesn't already exist) and webapp_app granted
+# scoped privileges on it -- adding a new module to the app needs no
+# change to this role, same principle as app.py's own directory scan
+# and setup.py's sync_all_modules.
+# Path as it exists ON THE TARGET HOST (jenkins) -- this whole role now
+# runs there, not on the controller. Adjust if app-framework ever moves.
+webapp_postgres_modules_dir: "/home/jenkins/app-framework/modules"
+
+# Still resolved on the controller -- Ansible's password lookup plugin
+# always runs locally regardless of hosts:, and caching it on the
+# control node (not jenkins) is unchanged from the original design.
 webapp_postgres_app_password_file: "{{ playbook_dir }}/.secrets/webapp_app_password.txt"

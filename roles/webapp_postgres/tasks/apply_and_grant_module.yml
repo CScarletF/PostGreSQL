@@ -1,0 +1,74 @@
+---
+# Included once per modules/<name>/schema.sql discovered by main.yml.
+# webapp_postgres_schema_path is that file's path ON THE TARGET HOST
+# (jenkins). slurp (not lookup('file')) is required for both reads
+# below -- lookup() always executes on the controller, but this file's
+# content only exists on jenkins now that the play targets it directly.
+
+- name: "{{ webapp_postgres_schema_path }}: read table.json"
+  ansible.builtin.slurp:
+    src: "{{ webapp_postgres_schema_path | dirname ~ '/table.json' }}"
+  register: webapp_postgres_table_json_raw
+
+- name: "{{ webapp_postgres_schema_path }}: parse table name"
+  ansible.builtin.set_fact:
+    webapp_postgres_current_table: >-
+      {{ (webapp_postgres_table_json_raw.content | b64decode | from_json).table }}
+
+- name: "{{ webapp_postgres_current_table }}: check whether table already exists"
+  community.postgresql.postgresql_query:
+    db: "{{ webapp_postgres_db_name }}"
+    login_host: "{{ webapp_postgres_vip }}"
+    login_port: "{{ webapp_postgres_vip_port }}"
+    login_user: "{{ webapp_postgres_superuser_user }}"
+    login_password: "{{ webapp_postgres_superuser_password }}"
+    query: >-
+      SELECT 1 FROM information_schema.tables
+      WHERE table_name = %(table_name)s
+    named_args:
+      table_name: "{{ webapp_postgres_current_table }}"
+  register: webapp_postgres_table_check
+
+- name: "{{ webapp_postgres_current_table }}: read schema.sql"
+  ansible.builtin.slurp:
+    src: "{{ webapp_postgres_schema_path }}"
+  register: webapp_postgres_schema_raw
+  when: webapp_postgres_table_check.rowcount == 0
+
+# schema.sql has no IF NOT EXISTS on CREATE TABLE/TRIGGER (matches the
+# framework repo's own convention) -- only apply when genuinely absent,
+# so re-running this playbook after the table exists is a no-op here,
+# not an error.
+- name: "{{ webapp_postgres_current_table }}: apply schema.sql (table + trigger)"
+  community.postgresql.postgresql_query:
+    db: "{{ webapp_postgres_db_name }}"
+    login_host: "{{ webapp_postgres_vip }}"
+    login_port: "{{ webapp_postgres_vip_port }}"
+    login_user: "{{ webapp_postgres_superuser_user }}"
+    login_password: "{{ webapp_postgres_superuser_password }}"
+    query: "{{ webapp_postgres_schema_raw.content | b64decode }}"
+  when: webapp_postgres_table_check.rowcount == 0
+
+- name: "{{ webapp_postgres_current_table }}: grant table privileges to application role"
+  community.postgresql.postgresql_privs:
+    db: "{{ webapp_postgres_db_name }}"
+    login_host: "{{ webapp_postgres_vip }}"
+    login_port: "{{ webapp_postgres_vip_port }}"
+    login_user: "{{ webapp_postgres_superuser_user }}"
+    login_password: "{{ webapp_postgres_superuser_password }}"
+    role: "{{ webapp_postgres_app_user }}"
+    type: table
+    objs: "{{ webapp_postgres_current_table }}"
+    privs: SELECT,INSERT,UPDATE,DELETE
+
+- name: "{{ webapp_postgres_current_table }}: grant sequence usage for the id column"
+  community.postgresql.postgresql_privs:
+    db: "{{ webapp_postgres_db_name }}"
+    login_host: "{{ webapp_postgres_vip }}"
+    login_port: "{{ webapp_postgres_vip_port }}"
+    login_user: "{{ webapp_postgres_superuser_user }}"
+    login_password: "{{ webapp_postgres_superuser_password }}"
+    role: "{{ webapp_postgres_app_user }}"
+    type: sequence
+    objs: "{{ webapp_postgres_current_table }}_id_seq"
+    privs: USAGE,SELECT

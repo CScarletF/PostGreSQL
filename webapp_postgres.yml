@@ -18,7 +18,7 @@
 # See webapp_postgres_secrets.yml.example for the template.
 
 - name: Provision webapp_demo database and equipment schema
-  hosts: localhost
+  hosts: 192.168.20.177
   connection: local
   gather_facts: false
   roles:
