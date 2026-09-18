@@ -1303,3 +1303,109 @@ single-table `equipment` case, so it's an unchanged gap, not a new one
 introduced by this addendum. A new module still needs both: this role
 for schema + grants, and `sync_tables.py` (directly, or via
 app-framework's own `setup.py`) for the generated Python table object.
+
+---
+---
+
+# Phase 3 addendum 2 — One-command provisioning script
+
+## Origin
+
+Even with the generalized role above, provisioning a fresh clone of this
+repo still meant: manually symlinking SSH keys into `/root/.ssh/`,
+confirming `python3-psycopg2` on `jenkins`, hand-writing
+`webapp_postgres_secrets.yml`, and remembering the exact
+`sudo ansible-playbook ... -e @secrets -e webapp_postgres_vip=... ...`
+invocation with every override flag. All manual, all steps this README
+already documented as prerequisites — worth automating into one script
+now that they're well understood, so a fresh clone is genuinely
+`git clone` -> fill in one config file -> run one script, no command
+memorization needed.
+
+## `scripts/setup.sh` and `scripts/config.env`
+
+`scripts/config.env.example` is the template; copy it to
+`scripts/config.env` (gitignored — holds the real superuser password)
+and fill in real values: `WEBAPP_SUPERUSER_PASSWORD`, `WEBAPP_VIP`/
+`WEBAPP_VIP_PORT`, `WEBAPP_DB_NAME`/`WEBAPP_APP_USER`,
+`WEBAPP_MODULES_DIR` (app-framework's `modules/` path AS IT EXISTS ON
+`TARGET_HOST`, not on this control node), `TARGET_HOST`,
+`INVENTORY_PATH`, and both SSH key paths as they exist on this control
+node's real home directory.
+
+`scripts/setup.sh`, run as `sudo` (same reason `ansible-playbook` itself
+needs `sudo` here — see the SSH-key note above), then: symlinks both
+keys into `/root/.ssh/` if not already present (idempotent — safe to
+re-run), checks for `python3-psycopg2` on `TARGET_HOST` via an ad-hoc
+`ansible ... -m command` probe and installs it via `apt` if missing,
+writes `webapp_postgres_secrets.yml` from the config file's password
+(overwriting any previous copy), and runs `webapp_postgres.yml` with
+every relevant variable passed as `-e`, sourced from `config.env` rather
+than hardcoded in the script itself.
+
+Usage, end to end:
+```bash
+git clone <this repo> && cd autobase-postgresql
+cp scripts/config.env.example scripts/config.env
+nano scripts/config.env   # fill in real values
+sudo scripts/setup.sh
+```
+
+## `.gitignore` additions
+
+```gitignore
+webapp_postgres_secrets.yml
+.secrets/
+scripts/config.env
+```
+
+`scripts/config.env.example` (no real secrets, just placeholders) IS
+committed — only the filled-in copy is ignored.
+
+---
+---
+
+# Phase 3 addendum 3 — Dropping `product.stock_quantity`'s lower-bound CHECK
+
+## Origin
+
+The companion `app-framework` repo added an "override" checkout path (a
+cashier confirming physical stock exists despite the system showing
+zero or insufficient stock), which requires `product.stock_quantity` to
+be allowed to go negative. The column's `CHECK (stock_quantity >= 0)`
+constraint unconditionally rejects any UPDATE that would violate it
+regardless of what application code decides to permit — so the
+constraint itself had to be dropped on the live table before the
+application-level override logic could do anything at all. See
+app-framework's own README for the full feature; this section covers
+only the database-side migration.
+
+## Running it
+
+`drop_stock_check.sql` (committed at this repo's root) looks up the
+constraint's actual name dynamically via `pg_constraint` rather than
+hardcoding it, since Postgres auto-generates the name and it can vary:
+
+```bash
+psql -h 192.168.20.190 -p 5000 -U postgres -d webapp_demo -f drop_stock_check.sql
+```
+
+Expect one `NOTICE:  Dropped constraint product_stock_quantity_check`
+line and no errors. Safe to re-run — if the constraint is already gone,
+it prints a NOTICE saying so instead of erroring.
+
+This is a genuine schema migration against a live table, not something
+`webapp_postgres`'s module-discovery role (Phase 3 addendum 1, above)
+handles — that role only ever applies a module's `schema.sql` when the
+table doesn't exist yet, by design (idempotent create, never an ALTER on
+an existing table). Any future schema change to an already-provisioned
+table needs its own one-off migration script like this one, run
+manually, same as this one was.
+
+**A known trap when writing scripts like this via a shell heredoc**: an
+unclosed quote or a mismatched heredoc delimiter can silently swallow
+trailing lines into the file being written, producing a file with
+garbage appended (a stray shell prompt's own text, an unterminated
+`EOF`) that then fails with a confusing SQL syntax error rather than a
+shell error. Always `cat` the file back and visually confirm its full
+contents end cleanly before running it against a live database.
