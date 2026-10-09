@@ -1409,3 +1409,75 @@ garbage appended (a stray shell prompt's own text, an unterminated
 `EOF`) that then fails with a confusing SQL syntax error rather than a
 shell error. Always `cat` the file back and visually confirm its full
 contents end cleanly before running it against a live database.
+---
+---
+
+# Phase 3 addendum 4 -- Audit columns on the original tables
+
+## Origin
+
+The companion `app-framework` repo added authentication (`app_user`) and
+requires every table to record who created and last changed each row:
+nullable `created_by` and `updated_by` columns referencing `app_user(id)`.
+New tables get them from their `schema.sql`. The six tables that already
+existed on the live database (`equipment`, `assignment`, `product`,
+`sale`, `sale_item`, `recipe`) need an ALTER, which the `webapp_postgres`
+role never performs (it only creates tables that are absent), so this is
+a one-off migration of the same category as `drop_stock_check.sql`.
+
+## Running it
+
+```bash
+scripts/migrate_audit_columns.sh          # shows the target, asks to confirm
+scripts/migrate_audit_columns.sh --yes    # unattended
+```
+
+It reads `scripts/config.env` (superuser password, VIP, port, database),
+runs `add_audit_columns.sql` as the Postgres superuser through the VIP,
+and prints a verification table listing both columns for every migrated
+table. No `sudo` is needed; it only requires the `psql` client on
+srv-deploy-eng.
+
+Properties:
+
+- Idempotent: columns that already exist are skipped, so re-running after
+  success changes nothing.
+- A missing table is skipped with a NOTICE; a missing `app_user` aborts
+  with a clear error (run `sudo scripts/setup.sh` first).
+- Existing rows keep NULL in both columns. They predate authentication and
+  have no author; the application treats NULL as "unknown".
+- Adding a nullable column without a default is a metadata-only change,
+  and the foreign key validates against NULLs, so the locks are brief.
+  With `synchronous_mode_strict` the synchronous replica must be healthy
+  for the DDL to commit, like any write.
+
+## Order of operations
+
+1. Deploy the app-framework change (the updated `schema.sql` files and
+   code). The code is safe before the migration: it only writes the audit
+   columns on tables whose generated `table_core.py` lists them.
+2. Run `scripts/migrate_audit_columns.sh`.
+3. In the app repo, run `python setup.py`: it re-reflects each table into
+   `table_core.py` (now including the audit columns) and recreates the
+   containers. Commit the regenerated `table_core.py` files.
+
+## Rollback
+
+Dropping the columns discards all attribution recorded since:
+
+```sql
+ALTER TABLE <table> DROP COLUMN created_by, DROP COLUMN updated_by;
+```
+
+for each of the six tables, then re-run `python setup.py` so the generated
+`table_core.py` files stop listing them.
+
+## Fresh-install ordering caveat
+
+Every module's `schema.sql` now references `app_user`, and some already
+referenced each other (`assignment` -> `equipment`, `sale_item` -> `sale`
+and `product`, `recipe` -> `product`). The `webapp_postgres` role applies
+schemas in the order `find` returns them, which is not a dependency order.
+Applying to an empty database can therefore fail depending on that order.
+Existing deployments are unaffected (every table already exists). Making
+the role apply schemas in dependency order is tracked as follow-up work.
