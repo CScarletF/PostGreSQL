@@ -1,0 +1,64 @@
+---
+# Derives table dependencies from REFERENCES clauses in each module's schema.sql
+# and produces webapp_postgres_ordered_paths: schema paths sorted so every table
+# is created after the tables it references. No maintained list: a new module is
+# ordered automatically.
+#
+# Input:  webapp_postgres_schema_contents  (registered slurp results; item.item is the path)
+# Output: webapp_postgres_ordered_paths
+#
+# Table name is taken from the module directory name, which matches the
+# REFERENCES targets in every module. A REFERENCES target that is not a module
+# (external table) is ignored. A dependency cycle fails the play.
+
+- name: Reset dependency facts
+  ansible.builtin.set_fact:
+    webapp_postgres_module_deps: {}
+    webapp_postgres_path_by_module: {}
+
+- name: Derive per-module dependencies (SQL comments stripped first)
+  ansible.builtin.set_fact:
+    webapp_postgres_module_deps: >-
+      {{ webapp_postgres_module_deps | combine({
+           (item.item | dirname | basename):
+             ((item.content | b64decode)
+               | regex_replace('--[^\n]*', '')
+               | regex_findall('(?i)REFERENCES\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)?([A-Za-z_][A-Za-z0-9_]*)')
+               | unique | list)
+         }) }}
+    webapp_postgres_path_by_module: >-
+      {{ webapp_postgres_path_by_module | combine({(item.item | dirname | basename): item.item}) }}
+  loop: "{{ webapp_postgres_schema_contents.results }}"
+  loop_control:
+    label: "{{ item.item | dirname | basename }}"
+
+- name: Compute dependency depth for every module
+  ansible.builtin.set_fact:
+    webapp_postgres_order_json: >-
+      {%- set deps = webapp_postgres_module_deps -%}
+      {%- set ns = namespace(depth={}) -%}
+      {%- for m in deps -%}{%- set _ = ns.depth.update({m: 0}) -%}{%- endfor -%}
+      {%- for _pass in range(deps | length + 1) -%}
+      {%- for m in deps -%}
+      {%- for d in deps[m] if d in deps and d != m -%}
+      {%- if ns.depth[m] <= ns.depth[d] -%}{%- set _ = ns.depth.update({m: ns.depth[d] + 1}) -%}{%- endif -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {%- endfor -%}
+      {%- set out = [] -%}
+      {%- for m in deps -%}{%- set _ = out.append({'depth': ns.depth[m], 'name': m}) -%}{%- endfor -%}
+      {{ {'max': (ns.depth.values() | list | max | default(0)),
+          'order': (out | sort(attribute='depth,name') | map(attribute='name') | list)} | to_json }}
+
+- name: Fail on dependency cycles
+  ansible.builtin.assert:
+    that:
+      - (webapp_postgres_order_json | from_json).max <= (webapp_postgres_module_deps | length)
+    fail_msg: "Cyclic REFERENCES between modules: {{ webapp_postgres_module_deps }}"
+    quiet: true
+
+- name: Build ordered schema path list
+  ansible.builtin.set_fact:
+    webapp_postgres_ordered_paths: >-
+      {{ (webapp_postgres_order_json | from_json).order
+         | map('extract', webapp_postgres_path_by_module) | list }}

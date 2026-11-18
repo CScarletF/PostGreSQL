@@ -1,3 +1,4 @@
 webapp_postgres_secrets.yml
 .secrets/
+scripts/config.envscripts/config.*.env
 scripts/config.env

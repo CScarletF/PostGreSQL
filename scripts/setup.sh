@@ -1,23 +1,30 @@
 #!/usr/bin/env bash
 # scripts/setup.sh -- one-shot webapp_postgres provisioning.
 #
-# Reads scripts/config.env, then: symlinks the Ansible SSH keys into
-# /root/.ssh/ if missing (see README's Phase 3 addendum for why this is
-# needed at all), confirms python3-psycopg2 is present on the target
-# host, writes a gitignored webapp_postgres_secrets.yml from config.env,
-# and runs webapp_postgres.yml -- no other command needed.
+# Reads a config file (default: scripts/config.env), then: symlinks the
+# Ansible SSH keys into /root/.ssh/ if missing (see README's Phase 3
+# addendum for why this is needed at all), confirms python3-psycopg2 is
+# present on the target host, writes a gitignored
+# webapp_postgres_secrets.yml from the config file, and runs
+# webapp_postgres.yml -- no other command needed.
 #
 # Usage:
 #   git clone <this repo> && cd autobase-postgresql
 #   cp scripts/config.env.example scripts/config.env
 #   # fill in scripts/config.env
 #   sudo scripts/setup.sh
+#
+# A second database for another deployment mode (e.g. Coolify) uses its
+# own config file, passed as the only argument:
+#   cp scripts/config.coolify.env.example scripts/config.coolify.env
+#   # fill in scripts/config.coolify.env
+#   sudo scripts/setup.sh scripts/config.coolify.env
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-CONFIG_FILE="$SCRIPT_DIR/config.env"
+CONFIG_FILE="${1:-$SCRIPT_DIR/config.env}"
 
 if [[ $EUID -ne 0 ]]; then
 	echo "Must run as root (sudo) -- webapp_postgres.yml connects using keys under /root/.ssh/." >&2
@@ -30,8 +37,8 @@ if ! command -v ansible-playbook >/dev/null 2>&1; then
 fi
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
-	echo "scripts/config.env not found." >&2
-	echo "Copy scripts/config.env.example to scripts/config.env, fill in real values, then re-run." >&2
+	echo "Config file not found: $CONFIG_FILE" >&2
+	echo "Copy the matching .example file to that path, fill in real values, then re-run." >&2
 	exit 1
 fi
 
@@ -53,7 +60,7 @@ REQUIRED_VARS=(
 
 for var in "${REQUIRED_VARS[@]}"; do
 	if [[ -z "${!var:-}" ]]; then
-		echo "config.env: $var is not set." >&2
+		echo "$CONFIG_FILE: $var is not set." >&2
 		exit 1
 	fi
 done
@@ -61,9 +68,12 @@ done
 cd "$REPO_ROOT"
 
 if [[ ! -f "$INVENTORY_PATH" ]]; then
-	echo "Inventory not found at $INVENTORY_PATH (check INVENTORY_PATH in config.env)." >&2
+	echo "Inventory not found at $INVENTORY_PATH (check INVENTORY_PATH in $CONFIG_FILE)." >&2
 	exit 1
 fi
+
+echo "==> Config: $CONFIG_FILE"
+echo "==> Target database: $WEBAPP_DB_NAME on $WEBAPP_VIP:$WEBAPP_VIP_PORT"
 
 echo "==> Symlinking SSH keys into /root/.ssh/ (idempotent)"
 mkdir -p /root/.ssh
